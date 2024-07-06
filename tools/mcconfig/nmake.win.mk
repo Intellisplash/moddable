@@ -33,8 +33,15 @@ START_XSBUG = tasklist /nh /fi "imagename eq xsbug.exe" | find /i "xsbug.exe" > 
 START_XSBUG =
 !ENDIF
 
+!IFNDEF XSBUG_PORT
+XSBUG_PORT = 5002
+!ENDIF
+!IFNDEF XSBUG_HOST
+XSBUG_HOST = localhost
+!ENDIF
+
 !IF "$(XSBUG_LOG)"=="1"
-START_COMMAND = cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)\mc.dll
+START_COMMAND = cmd /c "set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)\mc.dll"
 !ELSE
 START_COMMAND = start $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)\mc.dll
 !ENDIF
