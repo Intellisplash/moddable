@@ -510,8 +510,6 @@ release: precursor
 	python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) monitor
 
 prepare:
-	$(KILL_SERIAL2XSBUG)
-	$(START_XSBUG)
 	if exist $(BLD_DIR)\xs_esp32.elf del $(BLD_DIR)\xs_esp32.elf
 	if not exist $(BLD_DIR) mkdir $(BLD_DIR)
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
