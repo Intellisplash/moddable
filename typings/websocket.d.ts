@@ -19,7 +19,7 @@
 */
 
 declare module "websocket" {
-  import type {TCPSocketOptions, ListenerOptions} from "socket";
+  import type {TCPSocketOptions, ListenerOptions, Socket} from "socket";
 
   export type WebSocketClientOptions = TCPSocketOptions & {
     path?: string,
@@ -36,8 +36,10 @@ declare module "websocket" {
 
     constructor(options: WebSocketClientOptions);
     close(): void;
-    write(data: string | ArrayBuffer);
+    write(data: string | ArrayBuffer): number;
     callback: WebSocketClientCallback;
+    detach(): Socket;
+    readonly socket: Socket;
   }
 
   export type WebSocketServerOptions = ListenerOptions
@@ -52,7 +54,8 @@ declare module "websocket" {
 
     constructor(options: WebSocketServerOptions);
     close(): void;
-    write(message: string | ArrayBuffer): void;
+    write(message: string | ArrayBuffer): number;
     callback: WebSocketServerCallback;
+    attach(socket: Socket): void;
   }
 }
