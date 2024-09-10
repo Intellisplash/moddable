@@ -47,6 +47,9 @@ import Timer from "timer";
 		5 - sub-protocol(s) (client only)
 */
 
+// size of largest header that is subtracted from datasent values, to represent usable buffer space
+const MAX_WRITE_HEADER_SIZE = 8;
+
 export class Client {
 	constructor(dictionary) {
 		// port, host, address, path (everything after port)
@@ -72,6 +75,8 @@ export class Client {
 
 	write(message) {
 	//@@ implement masking
+		if (message === undefined) return Math.max(this.socket.write() - MAX_WRITE_HEADER_SIZE, 0);
+
 		const type = (message instanceof ArrayBuffer) ? 0x82 : 0x81;
 		if (0x81 === type)
 			message = ArrayBuffer.fromString(message);

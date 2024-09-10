@@ -36,7 +36,7 @@ declare module "websocket" {
 
     constructor(options: WebSocketClientOptions);
     close(): void;
-    write(data: string | ArrayBuffer): number;
+    write(data?: string | ArrayBuffer): number;
     callback: WebSocketClientCallback;
     detach(): Socket;
     readonly socket: Socket;
@@ -54,7 +54,7 @@ declare module "websocket" {
 
     constructor(options: WebSocketServerOptions);
     close(): void;
-    write(message: string | ArrayBuffer): number;
+    write(message?: string | ArrayBuffer): number;
     callback: WebSocketServerCallback;
     attach(socket: Socket): void;
   }
