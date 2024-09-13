@@ -26,35 +26,79 @@ declare module "websocket" {
     protocol?: string,
     headers?: string[]
   }
-  export type WebSocketClientCallback = (message: number, value?: any) => void;
 
+  export const enum WebSocketCloseCode {
+    normal = 1000,
+    goingAway = 1001,
+    protocolError = 1002,
+    unsupportedData = 1003,
+    noStatus = 1005,
+    abnormal = 1006,
+    invalidData = 1007,
+    policyViolation = 1008,
+    tooLarge = 1009,
+    extensionRequired = 1010,
+    unexpectedCondition = 1011,
+    tlsHandshake = 1015
+  }
+
+  export const enum WebSocketClientMessage {
+    connect = 1,
+    handshake = 2,
+    receive = 3,
+    disconnect = 4,
+    datasent = 6,
+    error = -1,
+  }
+
+  export type WebSocketClientCallback =
+    | ((message: WebSocketClientMessage.connect, value: Server) => void)
+    | ((message: WebSocketClientMessage.disconnect, code: WebSocketCloseCode) => void)
+    | ((message: WebSocketClientMessage.receive, value: String | ArrayBuffer) => void)
+    | ((message: WebSocketClientMessage.handshake) => void)
+    | ((message: WebSocketClientMessage.datasent) => void)
+    | ((message: WebSocketClientMessage.error, reason: string) => void);
+  
   export class Client {
-    static readonly connect: number;
-    static readonly handshake: number;
-    static readonly receive: number;
-    static readonly disconnect: number;
+    static readonly connect: 1;
+    static readonly handshake: 2;
+    static readonly receive: 3;
+    static readonly disconnect: 4;
+    static readonly datasent: 6;
+    static readonly error: -1;
 
     constructor(options: WebSocketClientOptions);
-    close(): void;
+    close(code?: WebSocketCloseCode): void;
     write(data?: string | ArrayBuffer): number;
     callback: WebSocketClientCallback;
     detach(): Socket;
     readonly socket: Socket;
+    get(what: 'REMOTE_IP'): string;
+  }
+
+  export const enum WebSocketServerMessage {
+    connect = 1,
+    handshake = 2,
+    subprotocol = 5
   }
 
   export type WebSocketServerOptions = ListenerOptions
-  export type WebSocketServerCallback = (message: number, value?: any) => void;
+  // for the server callback, 'this' is bound to the Client instance
+  export type WebSocketServerCallback = 
+    | ((message: WebSocketServerMessage.connect, value: Server) => void)
+    | ((message: WebSocketServerMessage.handshake) => void)
+    | ((message: WebSocketServerMessage.subprotocol, value: string[]) => void);
+
 
   export class Server {
-    static readonly connect: number;
-    static readonly handshake: number;
-    static readonly receive: number;
-    static readonly disconnect: number;
-    static readonly subprotocol: number;
+    static readonly connect: 1;
+    static readonly handshake: 2;
+    static readonly receive: 3; 
+    static readonly disconnect: 4; 
+    static readonly subprotocol: 5; 
 
     constructor(options: WebSocketServerOptions);
     close(): void;
-    write(message?: string | ArrayBuffer): number;
     callback: WebSocketServerCallback;
     attach(socket: Socket): void;
   }

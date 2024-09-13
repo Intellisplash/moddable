@@ -594,7 +594,8 @@ import {Client} from "websocket"
 
 The WebSocket client implementation is designed for sending and receiving small messages. It has the following limitations:
 
-- Each message must be a single frame. Fragmented messages are not supported.
+- Server close does not shut down client sockets.
+- No support for large websocket message types (>126 bytes per message).
 - Messages are not masked when sent.
 
 ### `constructor(dictionary)`
@@ -641,11 +642,14 @@ ws.write("hello");
 ws.write(JSON.stringify({text: "hello"}));
 ```
 
+You can also call `write()` (without arguments) and it returns the socket available bytes (calls the
+underlying `socket.write()`).
+
 ***
 
 ### `callback(message, value)`
 
-The user of the WebSocket client receives status information through the callback function. The callback receives messages and, for some messages, a data value. Positive `message` values indicate normal operation and negative `message` values indicate an error.
+The user of the WebSocket client receives status information through the callback function. The callback receives messages and, for some messages, a callback-specific value. 
 
 | `message` | `Client.` | Description |
 | :---: | :---: | :--- |
@@ -653,6 +657,10 @@ The user of the WebSocket client receives status information through the callbac
 | 2 | `handshake` | WebSocket handshake complete. This callback is received after the client has successfully completed the handshake with the WebSocket server to upgrade from the HTTP connection to a WebSocket connection. |
 | 3 | `receive` | Message received. This callback is received when a complete new message arrives from the server. The `value` argument contains the message. Binary messages are delivered in an `ArrayBuffer` and text messages in a `String`. |
 | 4 | `disconnect` | Closed. This callback is received when the connection closes, either by request of the server or a network error. `value` contains the error code, which is 0 if the connection was closed by the server and non-zero in the case of a network error. |
+| 6 | `datasent` | Sent when the underlying socket says data has been sent and there is socket write buffer space available.  `value` contains the byte available to send in the buffer.`. |
+| -1 | `error` | Error occured during communications.  The `disconnect` event will fire following this if the connection was terminated. |
+
+> It is not safe to call `ws.write` until the `handshake` message is received.
 
 ***
 
@@ -706,11 +714,44 @@ See the [httpserverwithwebsockets](../../examples/network/http/httpserverwithweb
 
 ### `callback(message, value)`
 
-The WebSocket server callback is the same as the WebSocket client callback with the addition of the "Socket connected" (`1` or `Server.connect`) message. The socket connected message for the server is invoked when the server accepts a new incoming connection.
+The user of the WebSocket server receives status information through the callback function. The callback receives messages and, for some messages, a data value. 
 
-The value of `this` is unique for each connection made to the server. Messages cannot be sent until after the callback receives the WebSocket handshake complete message (`Server.handshake`).
+| `message` | `Server.` | Description |
+| :---: | :---: | :--- |
+| 1 | `connect` | A client has connected to the server.  `this` is the WebSocket Client object, and `value` is the WebSocket Server. |
+| 2 | `handshake` | WebSocket handshake complete, and the web socket connection is ready for communications. |
+| 5 | `subprotocol` | If the client connects with a header request for a subprotocol, this event fires.  `value` is an array of strings. |
 
-The `this` instance of the callback has the same `write` and `close` methods as the WebSocket Client. These methods are used to send data and to close the connection.
+Server provides the Client of the new connecton as `this` on the callback, allowing the Client
+methods to be directly used by the callback.  Do not call `this.write` until the `handshake`
+message has been received.
+
+If you do not change the callback assignment in the `connect` message, it remains the same as the
+`Server` callback and receives the `client` callback messages as well.  This is useful for simple
+implementations that ensure there will be only one client, or do not need to distinguish between
+clients during communications.
+
+To use the callback in a class while maintaining your original `this` a technique such as wrapping the callback in a closure and
+passing your objects `this` as a parameter to the callback will be required:
+
+```js
+class MyWebSocketServer 
+	constructor(options) {
+		// start the server
+		this.server = new Server(options);
+		// attach a callback using a closure around the callback to preserve `self`
+		const self = this;
+		this.server.callback = function (message, value) {
+			// 'this' is the Client instance provided by the library and 'self' is the WebSocketServer instance
+			self.handleCallback(this, message, value);
+		};
+	}
+
+	handleCallback(socket, message, value): void {
+		// 'this' is MySocketServer and 'socket' is 'Client'
+		...
+	}
+```
 
 >**Note**: Text and binary messages received with the mask bit set are unmasked by the server before delivering them to the callback.
 
