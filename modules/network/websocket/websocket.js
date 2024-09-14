@@ -106,7 +106,7 @@ export class Client {
 			dictionary.port ??= 80;
 			if (dictionary.Socket) {
 				this.socket = new dictionary.Socket(Object.assign({}, dictionary.Socket, dictionary));
-				this.fromSocket = true;
+				this.fromSocket = false; // not a socket from the dictionary
 			}
 			else {
 				this.socket = new Socket(dictionary);

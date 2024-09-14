@@ -24,7 +24,9 @@ declare module "websocket" {
   export type WebSocketClientOptions = TCPSocketOptions & {
     path?: string,
     protocol?: string,
-    headers?: string[]
+    headers?: string[],
+    socket?: Socket,
+    Socket?: new (dict: { [k: string]: any; }) => unknown
   }
 
   export const enum WebSocketCloseCode {
