@@ -51,10 +51,12 @@ declare module "websocket" {
     error = -1,
   }
 
+  export type WSCloseArguments = { code: WebSocketCloseCode, reason?: string };
+
   export type WebSocketClientCallback =
-    | ((message: WebSocketClientMessage.connect, value: Server) => void)
-    | ((message: WebSocketClientMessage.disconnect, code: WebSocketCloseCode) => void)
-    | ((message: WebSocketClientMessage.receive, value: String | ArrayBuffer) => void)
+    | ((message: WebSocketClientMessage.connect, server: Server) => void)
+    | ((message: WebSocketClientMessage.disconnect, cause: WSCloseArguments) => void)
+    | ((message: WebSocketClientMessage.receive, data: String | ArrayBuffer) => void)
     | ((message: WebSocketClientMessage.handshake) => void)
     | ((message: WebSocketClientMessage.datasent) => void)
     | ((message: WebSocketClientMessage.error, reason: string) => void);
@@ -68,7 +70,7 @@ declare module "websocket" {
     static readonly error: -1;
 
     constructor(options: WebSocketClientOptions);
-    close(code?: WebSocketCloseCode): void;
+    close(code?: WebSocketCloseCode, reason?: string): void;
     write(data?: string | ArrayBuffer): number;
     callback: WebSocketClientCallback;
     detach(): Socket;
@@ -85,9 +87,9 @@ declare module "websocket" {
   export type WebSocketServerOptions = ListenerOptions
   // for the server callback, 'this' is bound to the Client instance
   export type WebSocketServerCallback = 
-    | ((message: WebSocketServerMessage.connect, value: Server) => void)
+    | ((message: WebSocketServerMessage.connect, server: Server) => void)
     | ((message: WebSocketServerMessage.handshake) => void)
-    | ((message: WebSocketServerMessage.subprotocol, value: string[]) => void);
+    | ((message: WebSocketServerMessage.subprotocol, subprotocol: string[]) => void);
 
 
   export class Server {

@@ -31,11 +31,12 @@ import Timer from 'timer';
 
 // State tracks the state machine processing the protocol
 const State = {
-	connecting: 0, // connecting
+	connecting: 0, 		 // connection not yet started
 	sendingHandshake: 1, // sending handshake status
 	receivingHeaders: 2, // receiving handshake headers
-	connected: 3, // connected
-	done: 4, // done
+	connected: 3, 		 // connected state, ready to send/receive messages
+	disconnecting: 4,	 // close started, frame set and awaiting confirmation
+	done: 5, 			 // connection terminated
 };
 Object.freeze(State.prototype);
 
@@ -57,13 +58,37 @@ const Flags = {
 };
 Object.freeze(Flags.prototype);
 
-// size of largest header that is subtracted from datasent values, to represent usable buffer space
-const MAX_WRITE_HEADER_SIZE = 8;
+// the maximum length of a reason string in a close response message.  Any close response sent that
+// is longer than this will be truncated to this length.  The size is arbitrary, but should be long
+// enough for the message to be understandable, but short enough to avoid excessive buffer space
+// allocation (and must be no more than 125 bytes to fit in the close frame header)
+const MAX_RESPONSE_REASON_LENGTH = 50;
 
-// NO_STATUS_RECEIVED is a special websocket error code that never transmits to the peer.
-// Internally used when an error has occured with the socket in an invalid state (or closed) to
-// indicate that no closing status code should be sent
-const WS_ERROR_NO_STATUS_RECEIVED = 1005;
+// the minimum amount of space that will be left in a Socket buffer to ensure we can fit headers and
+// any message that we might need to send on-demand (thereby needing free space in the outgoing
+// buffers to support it).  This is made up from the header size (2-byte frame header, 2-byte
+// payload length, 4-byte masking key) plus the maximum size of a close response message (2-byte
+// code plus MAX_RESPONSE_REASON_LENGTH bytes of reason)
+const MIN_BUFFER_FREE_SPACE = 2 + 2 + 4 + 2 + MAX_RESPONSE_REASON_LENGTH;
+
+const WSCloseCode = {
+    NORMAL_CLOSURE: 1000,          // Connection closed normally, no error (network)
+    GOING_AWAY: 1001,              // Endpoint is going away, such as server shutdown or client navigation (network)
+    PROTOCOL_ERROR: 1002,          // Protocol error, e.g., invalid WebSocket frame (network)
+    UNSUPPORTED_DATA: 1003,        // Received data that cannot be processed (network)
+    // 1004 is reserved for future use and should not be used.
+    NO_STATUS_RECEIVED: 1005,      // No status code received, used internally to indicate absence of a code (internal only)
+    ABNORMAL_CLOSURE: 1006,        // Abnormal closure, used internally when connection closed without receiving a close frame (internal only)
+    INVALID_FRAME_PAYLOAD_DATA: 1007, // Received invalid data, e.g., invalid UTF-8 (network)
+    POLICY_VIOLATION: 1008,        // Termination due to policy violation, e.g., application-specific rule violation (network)
+    MESSAGE_TOO_BIG: 1009,         // Message too big to process (network)
+    MISSING_EXTENSION: 1010,       // Expected server to negotiate extensions, but they were not provided (network)
+    INTERNAL_ERROR: 1011,          // Server encountered an unexpected condition preventing it from fulfilling the request (network)
+    SERVICE_RESTART: 1012,         // Service is restarting, causing the connection to be closed (network)
+    TRY_AGAIN_LATER: 1013,         // Server is temporarily unavailable, e.g., overload (network)
+    BAD_GATEWAY: 1014,             // Server acting as a gateway received an invalid response from the upstream server (network)
+    TLS_HANDSHAKE_FAILURE: 1015,   // Failure during the TLS handshake (internal only)
+};
 
 export class Client {
 	constructor(dictionary) {
@@ -72,23 +97,31 @@ export class Client {
 		this.host = dictionary.host ?? dictionary.address;
 		this.headers = dictionary.headers ?? [];
 		this.protocol = dictionary.protocol;
-		this.state = State.connecting;
-        this._resetMessageState();
 
-		if (dictionary.socket) this.socket = dictionary.socket;
+		if (dictionary.socket) {
+			this.socket = dictionary.socket;
+			this.fromSocket = true;
+		}
 		else {
 			dictionary.port ??= 80;
-			if (dictionary.Socket)
+			if (dictionary.Socket) {
 				this.socket = new dictionary.Socket(Object.assign({}, dictionary.Socket, dictionary));
-			else this.socket = new Socket(dictionary);
+				this.fromSocket = true;
+			}
+			else {
+				this.socket = new Socket(dictionary);
+				this.fromSocket = false;
+			}
 		}
 		this.socket.callback = clientSocketCallback.bind(this);
 		this.doMask = true;
+		this._setState(State.connecting);
+        this._resetMessageState();
 	}
 
 	write(message) {
 		//@@ implement masking
-		if (message === undefined) return Math.max(this.socket.write() - MAX_WRITE_HEADER_SIZE, 0);
+		if (message === undefined) return Math.max(this.socket.write() - MIN_BUFFER_FREE_SPACE, 0);
 
 		const type = message instanceof ArrayBuffer ? 0x82 : 0x81;
 		if (0x81 === type) message = ArrayBuffer.fromString(message);
@@ -114,19 +147,61 @@ export class Client {
 		delete this.socket;
 		return socket;
 	}
-	close() {
+	close(code, reason) {
+		if (code === undefined) code = WSCloseCode.NORMAL_CLOSURE;
+
+		// do we need to send a response close?  If our code isn't internal, and our state is
+		// connected, we need to send the close and await the response
+		if (
+			code !== WSCloseCode.NO_STATUS_RECEIVED &&
+			code !== WSCloseCode.ABNORMAL_CLOSURE && 
+			code !== WSCloseCode.TLS_HANDSHAKE_FAILURE &&
+			this.state === State.connected
+		) {
+			this._log(`Sending close frame, code ${code}, reason "${reason}"`);
+			// limit the reason length and transfer to an array buffer
+			if (reason) {
+				const reasonBuffer = ArrayBuffer.fromString(reason.length > MAX_RESPONSE_REASON_LENGTH ? reason.substring(0, MAX_RESPONSE_REASON_LENGTH) : reason);
+				this.socket.write(0x88, 0x80 + (reason ? (2 + reason.length) : 2), code >> 8, code & 0xff, reasonBuffer);
+			} else this.socket.write(0x88, 0x80 + 2, code >> 8, code & 0xff);
+			this._setState(State.disconnecting);
+			return;
+		}
+
+		// todo: REMOVE THIS
+		let msg = 'Close reason: ';
+		if (
+			code === WSCloseCode.NO_STATUS_RECEIVED ||
+			code === WSCloseCode.ABNORMAL_CLOSURE || 
+			code == WSCloseCode.TLS_HANDSHAKE_FAILURE)
+			msg += `code internal (code=${code}), `;
+		if (this.state !== State.connected)
+			msg += `not connected (state=${this._stateMessage(this.state)}), `;
+		this._log(`Closing socket, code ${code}`); // todo: ON REMOVE - this might remain
+		this._log(msg);
+		// todo: END REMOVE
+
+		// tear it down...
+		this.callback(Client.disconnect, { code, reason });
 		this.socket?.close();
 		delete this.socket;
 
 		if (this.timer) Timer.clear(this.timer);
 		delete this.timer;
 
-		this.state = State.done;
+		this._setState(State.done);
 	}
+	
 	get(what) {
 		if ('REMOTE_IP' === what) return this.socket.get('REMOTE_IP');
 		return undefined;
 	}
+
+	_setState(state) {
+		this._log(`Set state to ${this._stateMessage(state)}`);
+		this.state = state;
+	}
+
 	_resetMessageState() {
 		this.readState = ReadState.none;
 		this.readTag = undefined;
@@ -141,20 +216,44 @@ export class Client {
 	}
 
 	_log(message) {
-		trace(`WebSocket log: ${message}\n`);
+		trace(`${this.fromSocket ? '<warn>' : '<info>'}WS ${this.fromSocket ? 'socket' : 'url'}: ${message}\n`);
+	}
+
+	_socketMessage(message) {
+		switch (message) {
+			case Socket.connected: return 'connected';
+			case Socket.readable: return 'readable';
+			case Socket.writable: return 'writable';
+			case Socket.error: return 'error';
+			case Socket.disconnected: return 'disconnected';
+			default: return `unknown message ${message}`;
+		}
+	}
+
+	_stateMessage(state) {
+		switch (state) {
+			case State.connecting: return 'connecting';
+			case State.sendingHandshake: return 'sending handshake';
+			case State.receivingHeaders: return 'receiving headers';
+			case State.connected: return 'connected';
+			case State.disconnecting: return 'disconnecting';
+			case State.done: return 'done';
+			default: return `unknown state ${state}`;
+		}
 	}
 }
 
 function clientSocketCallback(message, socketByteCount) {
 	let socket = this.socket;
 
-    this._log(`callback message ${message}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}`);
+    this._log(`client socket message ${this._socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${this._stateMessage(this.state)}`);
 
 	if (Socket.connected == message) {
 		if (State.connecting != this.state) {
             this._resetMessageState();
-            this.callback(Client.error, 'socket connected but ws not in connecting state');
-			this.close(WS_ERROR_NO_STATUS_RECEIVED);  // todo: decide how to handle close codes
+			const reason = 'socket connected but ws not in connecting state';
+            this.callback(Client.error, reason);
+			this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 			return;
         }
 
@@ -192,8 +291,9 @@ function clientSocketCallback(message, socketByteCount) {
 			}
 		if (hdr != undefined) {
 			this._resetMessageState();
-			this.callback(Client.error, 'invalid header array: need a value for every header');
-			this.close(WS_ERROR_NO_STATUS_RECEIVED);
+			const reason = 'invalid header array';
+			this.callback(Client.error, reason);
+			this.close(WSCloseCode.INTERNAL_ERROR, reason);
 			return;
 		}
 
@@ -205,7 +305,7 @@ function clientSocketCallback(message, socketByteCount) {
 		delete this.headers;
 		delete this.protocol;
 
-		this.state = State.sendingHandshake;
+		this._setState(State.sendingHandshake);
 	}
 
 	if (Socket.readable == message) {
@@ -226,12 +326,12 @@ function clientSocketCallback(message, socketByteCount) {
 
 			if ('HTTP/1.1 101' !== line.substring(0, 12)) {
                 this._resetMessageState();
+				const reason = 'not HTTP/1.1';
 				this._log('web socket upgrade failed');
-				this.callback(Client.disconnect);
-				this.close();
+				this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 				return;
 			}
-			this.state = State.receivingHeaders;
+			this._setState(State.receivingHeaders);
 			this.line = undefined;
 			this.flags = Flags.none;
 		}
@@ -257,10 +357,11 @@ function clientSocketCallback(message, socketByteCount) {
 					if ((Flags.accept | Flags.upgrade | Flags.version) == this.flags) {
 						this.callback(Client.handshake); // websocket handshake complete
                         this._resetMessageState();
-						this.state = State.connected; // ready to receive
+						this._setState(State.connected); // ready to receive
 					} else {
-						this.callback(Client.disconnect); // failed
-						this.state = State.done; // close state
+						const reason = 'invalid header handshake';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
 					}
 					delete this.flags;
@@ -283,7 +384,7 @@ function clientSocketCallback(message, socketByteCount) {
 				}
 			}
 		}
-		if (State.connected === this.state) {
+		if (State.connected === this.state || State.disconnecting === this.state) {
 			// receive message
 			this._log(`Receive message, value ${socketByteCount}, read ${socket.read()}`);
 
@@ -291,26 +392,27 @@ function clientSocketCallback(message, socketByteCount) {
 				if (ReadState.none == this.readState) {
 					if (this.readTag === undefined) {
 						this.readTag = socket.read(Number);
-						this._log(`readTag is ${this.readTag}`);
+						this._log(`readTag is 0x${this.readTag.toString(16)} (tag ${this.readTag & 0x0f})`);
 						--socketByteCount;
 						continue;
 					}
 					if (this.readLength === undefined) {
 						this.readLength = socket.read(Number);
-						this._log(`Length is ${this.readLength}`);
+						this._log(`Length is ${this.readLength} (actual length ${this.readLength & 0x7f})`);
 						--socketByteCount;
 					}
 
 					this.readMask = 0 != (this.readLength & 0x80);
 					this.readLength &= 0x7f;
-					if (126 == this.readLength) this.readState = 1;
+					if (126 == this.readLength) this.readState = ReadState.readLength;
 					else if (127 == this.readLength) {
 						// unsupported 8 byte length
 						this._resetMessageState();
-						this.callback(Client.error, 'unsupported 8 byte length');
-						this.close(WS_ERROR_NO_STATUS_RECEIVED);
+						const reason = 'unsupported 8 byte length';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
-					} else this.readState = 2;
+					} else this.readState = ReadState.readBuffer;
 					if (socketByteCount == 0) continue;
 				}
 				if (ReadState.readLength == this.readState) {
@@ -352,8 +454,8 @@ function clientSocketCallback(message, socketByteCount) {
 
 					// process the tag
 					switch (this.readTag & 0x0f) {
-					case 1:
-					case 2:
+					case 1: // text frame
+					case 2: // binary frame
 							if (this.readMask && !this.readMaskBuffer) {
 								if (!this.captureBuffer) {
 									this.captureBytes = 4;
@@ -374,28 +476,48 @@ function clientSocketCallback(message, socketByteCount) {
 							this.captureBuffer = undefined;
 
 							if (this.readMask) Logical.xor(this.dataBuffer, this.readMaskBuffer);
-							if (1 === (this.readTag & 0x0f)) this.dataBuffer = String.fromArrayBuffer(this.dataBuffer);
+							if (1 === (this.readTag & 0x0f)) // text frame
+								this.dataBuffer = String.fromArrayBuffer(this.dataBuffer);
+
 							this._log(`Sending callback with data`);
 							this.callback(Client.receive, this.dataBuffer);
 							this._resetMessageState();
 						break;
-					case 8:
-						this.state = State.done;
-						this.callback(Client.disconnect); // close
-						this.close();
+					case 8: // close frame
+						if (!this.captureBuffer) {
+							this._log(`Request ${this.readLength} bytes for the close message`);
+							this.captureBytes = this.readLength;
+							continue;
+						}
+
+						const code = this.captureBuffer.byteLength >= 2 ? (this.captureBuffer[0] << 8 | this.captureBuffer[1]) : WSCloseCode.ABNORMAL_CLOSURE;
+						const reason = this.captureBuffer.byteLength > 2 ? String.fromArrayBuffer(this.captureBuffer.slice(2).buffer) : '';
+						
+						if (this.state === State.disconnecting) {
+							// terminate the socket
+							this._log(`Close frame confirmation received, code ${code}, reason "${reason}"`);
+							this.socket.close();
+							delete this.socket;
 							this._resetMessageState();
+						} else {
+							this._setState(State.disconnecting);
+							this._log(`Close frame request received, code ${code}, reason "${reason}"`);
+						}
+						this.close(code, reason);
 						return;
-					case 9: // ping
+					case 9: // ping frame
 							if (!this.captureBuffer && this.readLength) {
 								this.captureBytes = this.readLength;
 								continue;
 							}
 							if (this.readLength) socket.write(0x8a, this.readLength, this.captureBuffer.buffer);
 							//@@ assumes length is 125 or less
-						else socket.write(0x8a, 0);
+						else {
+							socket.write(0x8a, 0);
 							this._resetMessageState();
+						}
 						break;
-					case 10: // pong
+					case 10: // pong frame
 							if (!this.captureBuffer) {
 								this.captureBytes = this.readLength;
 								continue;
@@ -419,22 +541,19 @@ function clientSocketCallback(message, socketByteCount) {
 
 	if (Socket.writable === message) {
 		// data has been sent
-		const bytesAvailable = Math.min(this.socket.write() - MAX_WRITE_HEADER_SIZE);
+		const bytesAvailable = Math.min(this.socket.write() - MIN_BUFFER_FREE_SPACE);
 		this._log(
 			`Got datasent message, write says ${this.socket.write()} resulting in ${bytesAvailable} bytes available`
 		);
-		if (bytesAvailable > 0) {
-			this._log(`Sending datasent message`);
+		if (bytesAvailable > 0) 
 			this.callback(Client.datasent, bytesAvailable);
-		}
 	}
 
 	if (message < 0) {
 		if (State.done !== this.state) {
-			this.callback(Client.error, "Corrupt stream or socket error");
-			this.callback(Client.disconnect);
-			this.close();
-			this.state = State.done;
+			const reason = `socket error ${message}`;
+			this.callback(Client.error, reason);
+			this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 		}
 	}
 }
@@ -448,7 +567,7 @@ export class Server {
 		this.#listener.callback = () => {
 			// new client connection; create a new socket and provide the callers Server.callback
 			// for to use once the handshake is done
-			const request = addClient(new Socket({ listener: this.#listener }), 1, this.callback);
+			const request = addClient(new Socket({ listener: this.#listener }), State.sendingHandshake, this.callback);
 			request.callback(Server.connect, this); // tell app we have a new connection
 		};
 	}
@@ -457,7 +576,7 @@ export class Server {
 		this.#listener = undefined;
 	}
 	attach(socket) {
-		const request = addClient(socket, 2, this.callback);
+		const request = addClient(socket, State.receivingHeaders, this.callback);
 		request.timer = Timer.set(() => {
 			delete request.timer;
 			request.callback(Server.connect, this); // tell server app we have a new connection
@@ -472,7 +591,7 @@ function addClient(socket, state, callback) {
 	const request = new Client({ socket });
 	delete request.doMask;
 	socket.callback = serverSocketCallback.bind(request);
-	request.state = state;
+	request._setState(state);
 	request.callback = callback; // set the Client callback to use the Server.callback
 	return request;
 }
@@ -485,6 +604,8 @@ function serverSocketCallback(message, socketByteCount) {
 	let socket = this.socket;
 
 	if (!socket) return;
+
+	this._log(`server socket message ${this._socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${this._stateMessage(this.state)}`);
 
 	if (Socket.readable == message) {
 		if (State.sendingHandshake === this.state || State.receivingHeaders === this.state) {
@@ -509,8 +630,9 @@ function serverSocketCallback(message, socketByteCount) {
 					// empty line is end of headers
 					if ((Flags.accept | Flags.upgrade | Flags.version | Flags.key) !== this.flags) {
                         this._resetMessageState();
-						this.callback(Client.error, 'not a valid websocket handshake');
-						this.close(WS_ERROR_NO_STATUS_RECEIVED);
+						const reason = 'invalid handshake';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
                     }
 
@@ -541,7 +663,7 @@ function serverSocketCallback(message, socketByteCount) {
 
 					this.callback(Server.handshake); // websocket handshake complete
 
-					this.state = State.connected;
+					this._setState(State.connected);
 					socket.callback = clientSocketCallback.bind(this);
 					socketByteCount = socket.read(); // number of bytes available
 					if (0 !== socketByteCount)
@@ -555,24 +677,27 @@ function serverSocketCallback(message, socketByteCount) {
 					line = line.split(' ');
 					if (line.length < 3) {
 						this._resetMessageState();
-						this.callback(Client.error, 'unexpected status format');
-						this.close(WS_ERROR_NO_STATUS_RECEIVED);
+						const reason = 'unknown status format';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
 					}
 					if ('GET' != line[0]) {
 						this._resetMessageState();
-						this.callback(Client.error, 'unexpected GET');
-						this.close(WS_ERROR_NO_STATUS_RECEIVED);
+						const reason = 'not GET';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
 					}
 					if ('HTTP/1.1' != line[line.length - 1].trim()) {
 						this._resetMessageState();
-						this.callback(Client.error, 'not HTTP/1.1');
-						this.close(WS_ERROR_NO_STATUS_RECEIVED);
+						const reason = 'not HTTP/1.1';
+						this.callback(Client.error, reason);
+						this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 						return;
 					}
 					//@@ could provide path to callback here
-					this.state = State.receivingHeaders;
+					this._setState(State.receivingHeaders);
 					this.flags = Flags.none;
 				} else if (State.receivingHeaders === this.state) {
 					let position = line.indexOf(':');
@@ -602,8 +727,8 @@ function serverSocketCallback(message, socketByteCount) {
 	}
 
 	if (message < 0) {
-		this.callback(Client.disconnect);
-		this.close();
+		const reason = 'corrupt stream or socket error';
+		this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 	}
 }
 
