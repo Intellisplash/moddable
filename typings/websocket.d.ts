@@ -74,7 +74,7 @@ declare module "websocket" {
     constructor(options: WebSocketClientOptions);
     close(code?: WebSocketCloseCode, reason?: string): void;
     write(data?: string | ArrayBuffer): number;
-    callback: WebSocketClientCallback;
+    set callback(cb: WebSocketClientCallback);
     detach(): Socket;
     readonly socket: Socket;
     get(what: 'REMOTE_IP'): string;
@@ -103,7 +103,7 @@ declare module "websocket" {
 
     constructor(options: WebSocketServerOptions);
     close(): void;
-    callback: WebSocketServerCallback;
+    set callback(cb: WebSocketServerCallback);
     attach(socket: Socket): void;
   }
 }
