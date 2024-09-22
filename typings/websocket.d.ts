@@ -83,6 +83,7 @@ declare module "websocket" {
   export const enum WebSocketServerMessage {
     connect = 1,
     handshake = 2,
+    disconnect = 4,
     subprotocol = 5
   }
 
@@ -91,7 +92,8 @@ declare module "websocket" {
   export type WebSocketServerCallback = 
     | ((message: WebSocketServerMessage.connect, server: Server) => void)
     | ((message: WebSocketServerMessage.handshake) => void)
-    | ((message: WebSocketServerMessage.subprotocol, subprotocol: string[]) => void);
+    | ((message: WebSocketServerMessage.subprotocol, subprotocol: string[]) => void)
+    | ((message: WebSocketServerMessage.disconnect, cause: WSCloseArguments) => void);
 
 
   export class Server {
@@ -102,7 +104,7 @@ declare module "websocket" {
     static readonly subprotocol: 5; 
 
     constructor(options: WebSocketServerOptions);
-    close(): void;
+    close(code?: WebSocketCloseCode, reason?: string): void;
     set callback(cb: WebSocketServerCallback);
     attach(socket: Socket): void;
   }
