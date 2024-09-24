@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021  Moddable Tech, Inc.
+ * Copyright (c) 2018-2024  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  * 
@@ -180,6 +180,16 @@ globalThis.$NETWORK = {
 		// could be async to allow time to bring up an AP 
 		return {ssid: config.ssid, password: config.password};
 	},
+	async resolve(domain) {
+		return new Promise((resolve, reject) => {
+			Net.resolve(domain, (name, address) => {
+				if (address)
+					resolve(address);
+				else
+					reject();
+			});
+		});
+	},
 	invalidDomain: "fail.moddable.com",
 };
 
@@ -195,7 +205,7 @@ class HostBuffer @ "xs_hostbuffer_destructor" {
 	constructor() @ "xs_hostbuffer"
 }
 
-class TestBehavior extends Behavior {
+class TestBehavior extends (globalThis.Behavior ?? Object) {
 	constructor() {
 		super();
 

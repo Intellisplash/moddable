@@ -424,7 +424,7 @@ void fx_fuzzilli(xsMachine* the)
 }
 
 #ifdef mxMetering
-static xsBooleanValue xsAlwaysWithinComputeLimit(xsMachine* machine, xsUnsignedValue index)
+static xsBooleanValue xsAlwaysWithinComputeLimit(xsMachine* machine, uint64_t index)
 {
 	return 1;
 }
@@ -467,7 +467,7 @@ int fuzz(int argc, char* argv[])
 		gxMemoryFail = 0;
 
 		xsMachine* machine = xsCreateMachine(&_creation, "xst_fuzz", NULL);
-		xsBeginMetering(machine, xsAlwaysWithinComputeLimit, 0x7FFFFFFF);
+		xsBeginMetering(machine, xsAlwaysWithinComputeLimit, 0);		// interval/step of zero means "never invoke callback" 
 		{
 		xsBeginHost(machine);
 		{
@@ -575,7 +575,7 @@ int fuzz(int argc, char* argv[])
 	#define mxFuzzMeter (214748380)
 #endif
 
-static xsBooleanValue xsWithinComputeLimit(xsMachine* machine, xsUnsignedValue index)
+static xsBooleanValue xsWithinComputeLimit(xsMachine* machine, uint64_t index)
 {
 	// may be useful to print current index for debugging
 //	fprintf(stderr, "Current index: %u\n", index);
@@ -614,7 +614,7 @@ int fuzz_oss(const uint8_t *Data, size_t script_size)
 	xsMachine* machine;
 	machine = xsCreateMachine(creation, "xst_fuzz_oss", NULL);
 
-	xsBeginMetering(machine, xsWithinComputeLimit, 1);
+	xsBeginMetering(machine, xsWithinComputeLimit, 65536);
 	{
 		xsBeginHost(machine);
 		{

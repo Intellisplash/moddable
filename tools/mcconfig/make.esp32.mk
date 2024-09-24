@@ -38,7 +38,7 @@ endif
 PROGRAMMING_VID ?= 303a
 PROGRAMMING_PID ?= 1001
 
-EXPECTED_ESP_IDF ?= v5.2.2
+EXPECTED_ESP_IDF ?= v5.3
 
 # ESP32_SUBCLASS is to find some include files in IDFv4
 # values include esp32, esp32s3 and esp32s2
@@ -123,20 +123,7 @@ else
 	USB_OPTION = -DUSE_USB=$(USE_USB)
 endif
 
-ifeq ($(USE_USB),1) 
-	TINY_USB_BITS=$(PROJ_DIR)/managed_components
-endif
-
-# 	$(IDF_PATH)/components/driver/deprecated
-
-INC_DIRS = \
-	$(IDF_PATH)/components \
-	$(IDF_PATH)/components/bootloader_support/include \
-	$(IDF_PATH)/components/bt/include \
-	$(IDF_PATH)/components/bt/include/$(ESP32_BT_SUBCLASS)/include \
-	$(IDF_PATH)/components/bt/host/bluedroid/api/include \
-	$(IDF_PATH)/components/bt/host/bluedroid/api/include/api \
-	$(IDF_PATH)/components/esp_adc/include \
+DRIVER_DIRS_OLD = \
 	$(IDF_PATH)/components/driver/dac/include \
 	$(IDF_PATH)/components/driver/gpio/include \
 	$(IDF_PATH)/components/driver/gptimer/include \
@@ -149,13 +136,41 @@ INC_DIRS = \
 	$(IDF_PATH)/components/driver/sdmmc/include \
 	$(IDF_PATH)/components/driver/spi/include \
 	$(IDF_PATH)/components/driver/uart/include \
+	$(IDF_PATH)/components/driver/touch_sensor/include \
+	$(IDF_PATH)/components/driver/touch_sensor/$(ESP32_SUBCLASS)/include \
 	$(IDF_PATH)/components/driver/include \
 	$(IDF_PATH)/components/driver/include/driver \
 	$(IDF_PATH)/components/driver/$(ESP32_SUBCLASS)/include \
-	$(IDF_PATH)/components/driver/$(ESP32_SUBCLASS)/include/driver \
+	$(IDF_PATH)/components/driver/$(ESP32_SUBCLASS)/include/driver
+
+DRIVER_DIRS = \
+	$(IDF_PATH)/components/driver/i2c/include \
+	$(IDF_PATH)/components/esp_driver_dac/include \
+	$(IDF_PATH)/components/esp_driver_gpio/include \
+	$(IDF_PATH)/components/esp_driver_gptimer/include \
+	$(IDF_PATH)/components/esp_driver_i2c/include \
+	$(IDF_PATH)/components/esp_driver_i2s/include \
+	$(IDF_PATH)/components/esp_driver_ledc/include \
+	$(IDF_PATH)/components/esp_driver_mcpwm/include \
+	$(IDF_PATH)/components/esp_driver_pcnt/include \
+	$(IDF_PATH)/components/esp_driver_rmt/include \
+	$(IDF_PATH)/components/esp_driver_sdmmc/include \
+	$(IDF_PATH)/components/esp_driver_spi/include \
+	$(IDF_PATH)/components/esp_driver_uart/include
+
+INC_DIRS = \
+	$(DRIVER_DIRS) \
+	$(MANAGED_COMPONENT_DIRS) \
+	$(IDF_PATH)/components \
+	$(IDF_PATH)/components/bootloader_support/include \
+	$(IDF_PATH)/components/bt/include \
+	$(IDF_PATH)/components/bt/include/$(ESP32_BT_SUBCLASS)/include \
+	$(IDF_PATH)/components/bt/host/bluedroid/api/include \
+	$(IDF_PATH)/components/bt/host/bluedroid/api/include/api \
  	$(IDF_PATH)/components/esp_adc/include \
  	$(IDF_PATH)/components/esp_adc/$(ESP32_SUBCLASS)/include \
 	$(IDF_PATH)/components/esp_app_format/include \
+	$(IDF_PATH)/components/esp_bootloader_format/include \
 	$(IDF_PATH)/components/esp_common/include \
 	$(IDF_PATH)/components/$(ESP32_SUBCLASS) \
 	$(IDF_PATH)/components/$(ESP32_SUBCLASS)/include \
@@ -220,8 +235,6 @@ INC_DIRS = \
 	$(IDF_PATH)/components/spi_flash/include \
 	$(IDF_PATH)/components/tcpip_adapter/include \
 	$(IDF_PATH)/components/tcpip_adapter \
-	$(IDF_PATH)/components/driver/touch_sensor/include \
-	$(IDF_PATH)/components/driver/touch_sensor/$(ESP32_SUBCLASS)/include \
  	$(IDF_PATH)/components/tinyusb/additions/include
 
 # paths for prior idf
@@ -383,7 +396,7 @@ MEM_USAGE = \
 
 VPATH += $(SDK_DIRS) $(XS_DIRS)
 
-.PHONY: all bootloaderCheck
+.PHONY: all bootloaderCheck prepareOutput
 
 PROJ_DIR_TEMPLATE = $(BUILD_DIR)/devices/esp32/xsProj-$(ESP32_SUBCLASS)
 PROJ_DIR_FILES = \
@@ -559,6 +572,7 @@ xsbug:
 prepareOutput:
 	-@rm $(PROJ_DIR)/xs_esp32.elf 2>/dev/null
 	-@rm $(BIN_DIR)/xs_esp32.elf 2>/dev/null
+	-@rm $(TMP_DIR)/xsProj-$(ESP32_SUBCLASS)/main/idf_component.yml
 
 DUMP_VARS:
 	echo "#\n#\n# vars\n#\n#\n"
@@ -569,7 +583,12 @@ DUMP_VARS:
 	echo "# IDF_RECONFIGURE_CMD is $(IDF_RECONFIGURE_CMD)"
 	echo "# SDKCONFIG_H_DIR is $(SDKCONFIG_H_DIR)"
 
-precursor: idfVersionCheck prepareOutput $(PROJ_DIR_FILES) bootloaderCheck $(BLE) $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a
+dependencies: $(PROJ_DIR) $(PROJ_DIR_FILES) $(PROJ_DIR)/../xs_idf_deps.txt
+	echo "# Configure dependencies..."
+	-rm -f $(PROJ_DIR)/main/idf_component.yml
+	cd $(PROJ_DIR) ; $(BUILD_DEPENDENCIES)
+
+precursor: prepareOutput idfVersionCheck $(PROJ_DIR_FILES) bootloaderCheck $(BLE) dependencies $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a
 	cp $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $(BLD_DIR)/.
 	touch $(PROJ_DIR)/main/main.c
 
@@ -596,10 +615,7 @@ clean:
 	-rm -rf $(TMP_DIR) 2>/dev/null
 	-rm -rf $(LIB_DIR) 2>/dev/null	
 
-$(PROJ_DIR)/managed_components: $(PROJ_DIR)/main
-	echo "# Configure tinyusb..."; cd $(PROJ_DIR) ; idf.py add-dependency "espressif/esp_tinyusb"
-
-$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES) $(TINY_USB_BITS)
+$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES) dependencies
 	-rm $(PROJ_DIR)/sdkconfig 2>/dev/null
 	echo "# Reconfiguring ESP-IDF..." ; cd $(PROJ_DIR) ; $(IDF_RECONFIGURE_CMD)
 
@@ -611,7 +627,7 @@ $(TMP_DIR)/buildinfo.h:
 $(LIB_DIR):
 	mkdir -p $(LIB_DIR)
 	
-$(BIN_DIR)/xs_$(ESP32_SUBCLASS).a: $(TMP_DIR)/buildinfo.h $(SDK_OBJ) $(XS_OBJ) $(TMP_DIR)/xsPlatform.c.o $(TMP_DIR)/xsHost.c.o $(TMP_DIR)/xsHosts.c.o $(TMP_DIR)/mc.xs.c.o $(TMP_DIR)/mc.resources.c.o $(OBJECTS) 
+$(BIN_DIR)/xs_$(ESP32_SUBCLASS).a: $(TMP_DIR)/buildinfo.h $(SDK_OBJ) $(XS_OBJ) $(TMP_DIR)/xsPlatform.c.o $(TMP_DIR)/xsHost.c.o $(TMP_DIR)/xsHosts.c.o $(TMP_DIR)/mc.xs.c.o $(TMP_DIR)/mc.resources.c.o $(OBJECTS)
 	@echo "# ar xs_$(ESP32_SUBCLASS).a"
 	$(CC) $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) $(TMP_DIR)/buildinfo.c -o $(TMP_DIR)/buildinfo.c.o
 	$(AR) $(AR_FLAGS) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $^ $(TMP_DIR)/buildinfo.c.o

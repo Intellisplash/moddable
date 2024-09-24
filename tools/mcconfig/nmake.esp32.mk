@@ -25,7 +25,7 @@ HOST_OS = win
 !ENDIF
 
 !IF "$(EXPECTED_ESP_IDF)"==""
-EXPECTED_ESP_IDF = v5.2.1
+EXPECTED_ESP_IDF = v5.3
 !ENDIF
 
 !IF "$(VERBOSE)"=="1"
@@ -83,7 +83,6 @@ USE_USB = 0
 !ENDIF
 
 !IF "$(USE_USB)"=="1"
-TINY_USB_BITS=$(PROJ_DIR)/managed_components
 !IF "$(USB_VENDOR_ID)"==""
 USB_VENDOR_ID = beef
 !ENDIF
@@ -186,13 +185,7 @@ BLD_DIR = $(PROJ_DIR)\build
 
 PLATFORM_DIR = $(BUILD_DIR)\devices\esp32
 
-INC_DIRS = \
- 	-I$(IDF_PATH)\components \
- 	-I$(IDF_PATH)\components\bootloader_support\include \
- 	-I$(IDF_PATH)\components\bt\include \
-	-I$(IDF_PATH)\components\bt\include\$(ESP32_BT_SUBCLASS)\include \
- 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include \
- 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include\api \
+DRIVER_DIRS_OLD = \
  	-I$(IDF_PATH)\components\driver\dac\include \
  	-I$(IDF_PATH)\components\driver\gpio\include \
  	-I$(IDF_PATH)\components\driver\gptimer\include \
@@ -207,10 +200,36 @@ INC_DIRS = \
  	-I$(IDF_PATH)\components\driver\include \
 	-I$(IDF_PATH)\components\driver\include\driver \
 	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include \
-	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include\driver \
+	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include\driver
+
+DRIVER_DIRS = \
+ 	-I$(IDF_PATH)\components\driver\i2c\include \
+ 	-I$(IDF_PATH)\components\esp_driver_dac\include \
+ 	-I$(IDF_PATH)\components\esp_driver_gpio\include \
+ 	-I$(IDF_PATH)\components\esp_driver_gptimer\include \
+ 	-I$(IDF_PATH)\components\esp_driver_i2c\include \
+ 	-I$(IDF_PATH)\components\esp_driver_i2s\include \
+ 	-I$(IDF_PATH)\components\esp_driver_ledc\include \
+ 	-I$(IDF_PATH)\components\esp_driver_mcpwm\include \
+ 	-I$(IDF_PATH)\components\esp_driver_pcnt\include \
+ 	-I$(IDF_PATH)\components\esp_driver_rmt\include \
+ 	-I$(IDF_PATH)\components\esp_driver_sdmmc\include \
+ 	-I$(IDF_PATH)\components\esp_driver_spi\include \
+ 	-I$(IDF_PATH)\components\esp_driver_uart\include
+
+INC_DIRS = \
+	$(DRIVER_DIRS) \
+	$(MANAGED_COMPONENT_DIRS) \
+ 	-I$(IDF_PATH)\components \
+ 	-I$(IDF_PATH)\components\bootloader_support\include \
+ 	-I$(IDF_PATH)\components\bt\include \
+	-I$(IDF_PATH)\components\bt\include\$(ESP32_BT_SUBCLASS)\include \
+ 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include \
+ 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include\api \
 	-I$(IDF_PATH)\components\esp_app_format\include \
 	-I$(IDF_PATH)\components\esp_adc\include \
 	-I$(IDF_PATH)\components\esp_adc\$(ESP32_SUBCLASS)\include \
+	-I$(IDF_PATH)\components\esp_bootloader_format\include \
 	-I$(IDF_PATH)\components\esp_common\include \
  	-I$(IDF_PATH)\components\$(ESP32_SUBCLASS)\include \
 	-I$(IDF_PATH)\components\$(ESP32_SUBCLASS) \
@@ -476,7 +495,7 @@ PROJ_DIR_FILES = $(PROJ_DIR_FILES) \
 !ENDIF
 !ENDIF
 
-.PHONY: all
+.PHONY: all dependencies
 
 all: $(LAUNCH)
 
@@ -495,7 +514,11 @@ clean:
 	if exist $(PROJ_DIR) del /s/q/f $(PROJ_DIR)\*.* > NUL
 	if exist $(PROJ_DIR) rmdir /s/q $(PROJ_DIR)
 
-precursor: idfVersionCheck $(BLE) $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a
+dependencies: $(PROJ_DIR) $(PROJ_DIR_FILES) $(PROJ_DIR)\..\xs_idf_deps.txt
+	if exist $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)\main\idf_component.yml del $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)\main\idf_component.yml
+	echo "# Configure dependencies..." & cd $(PROJ_DIR) & $(BUILD_DEPENDENCIES)
+
+precursor: idfVersionCheck $(BLE) dependencies $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
 
 debug: precursor
@@ -587,10 +610,7 @@ xidfVersionCheck:
 		exit 1
 	)
 
-$(PROJ_DIR)\managed_components:
-	echo "# Configure tinyusb..."; cd $(PROJ_DIR) ; idf.py add-dependency "espressif/esp_tinyusb"
-
-$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES) $(TINY_USB_BITS)
+$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES)
 	@echo Reconfiguring ESP-IDF...
 	if exist $(PROJ_DIR)\sdkconfig del $(PROJ_DIR)\sdkconfig
 	cd $(PROJ_DIR) 
