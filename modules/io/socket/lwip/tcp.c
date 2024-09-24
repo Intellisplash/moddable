@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023  Moddable Tech, Inc.
+ * Copyright (c) 2019-2024  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -64,6 +64,7 @@ struct TCPRecord {
 	int8_t			useCount;
 	uint8_t			error;
 	uint8_t			format;
+	uint8_t			ready;
 	xsMachine		*the;
 	xsSlot			*onReadable;
 	xsSlot			*onWritable;
@@ -152,10 +153,10 @@ void xs_tcp_constructor(xsMachine *the)
 
 			xsmcGet(xsVar(0), xsArg(0), xsID_address);
 			if (!ipaddr_aton(xsmcToStringBuffer(xsVar(0), addrStr, sizeof(addrStr)), &address))
-				xsRangeError("invalid IP address");
+				xsUnknownError("invalid address");
 
 			xsmcGet(xsVar(0), xsArg(0), xsID_port);
-			port = xsmcToInteger(xsVar(0));
+			port = builtinGetSignedInteger(the, &xsVar(0)); 
 			if ((port < 0) || (port > 65535))
 				xsRangeError("invalid port");
 
@@ -212,12 +213,14 @@ void xs_tcp_constructor(xsMachine *the)
 	tcp_recv(skt, tcpReceive);
 
 	tcp->triggerable = triggerable;
-	tcp->onReadable = onReadable;
-	tcp->onWritable = onWritable;
-	tcp->onError = onError;
+	if (triggerable) {
+		tcp->onReadable = onReadable;
+		tcp->onWritable = onWritable;
+		tcp->onError = onError;
 
-	if (onWritable)
-		tcp_sent(skt, tcpSent);
+		if (onWritable)
+			tcp_sent(skt, tcpSent);
+	}
 
 	if (connect) {
 		if (tcp_connect_safe(skt, &address, port, tcpConnect))
@@ -265,6 +268,8 @@ void doClose(xsMachine *the, xsSlot *instance)
 {
 	TCP tcp = xsmcGetHostData(*instance);
 	if (tcp && xsmcGetHostDataValidate(*instance, (void *)&xsTCPHooks)) {
+		tcp->ready = false;
+
 		removeTCPCallbacks(tcp);
 		tcp->triggerable = 0;
 
@@ -312,6 +317,7 @@ void xs_tcp_read(xsMachine *the)
 			xsmcGetBufferWritable(xsResult, (void **)&out, &byteLength);
 			requested = (int)byteLength;
 			allocate = 0;
+			xsmcSetInteger(xsResult, requested);
 		}
 		else
 			requested = xsmcToInteger(xsArg(0));
@@ -369,6 +375,9 @@ void xs_tcp_write(xsMachine *the)
 	xsUnsignedValue needed;
 	void *buffer;
 	uint8_t value;
+
+	if (!tcp->ready)
+		xsUnknownError("not ready");
 
 	if (tcp->error || !tcp->skt)
 		return;
@@ -468,6 +477,7 @@ void tcpDeliver(void *the, void *refcon, uint8_t *message, uint16_t messageLengt
 	if (triggered & kTCPError) {
 		triggered &= ~(kTCPOutput | kTCPWritable);
 		tcp->error = true;
+		tcp->ready = false;
 	}
 
 	if ((triggered & kTCPOutput) && tcp->skt)
@@ -507,7 +517,9 @@ void tcpDeliver(void *the, void *refcon, uint8_t *message, uint16_t messageLengt
 
 err_t tcpConnect(void *arg, struct tcp_pcb *tpcb, err_t err)
 {
-	tcpTrigger((TCP)arg, err ? kTCPError : kTCPWritable);
+	TCP tcp = arg;
+	tcp->ready = !err;
+	tcpTrigger(tcp, err ? kTCPError : kTCPWritable);
 	return ERR_OK;
 }
 
@@ -651,14 +663,16 @@ void xs_listener_constructor(xsMachine *the)
 	Listener listener;
 	struct tcp_pcb *skt;
 	ip_addr_t address = *(IP_ADDR_ANY);
-	uint16_t port = 0;
+	int port = 0;
 	xsSlot *onReadable;
 
 	xsmcVars(1);
 
 	if (xsmcHas(xsArg(0), xsID_port)) {
 		xsmcGet(xsVar(0), xsArg(0), xsID_port);
-		port = (uint16_t)xsmcToInteger(xsVar(0));
+		port = builtinGetSignedInteger(the, &xsVar(0)); 
+		if ((port < 0) || (port > 65535))
+			xsRangeError("invalid port");
 	}
 	//@@ address
 
@@ -673,7 +687,7 @@ void xs_listener_constructor(xsMachine *the)
 		xsUnknownError("no socket");
 
 	skt->so_options |= SOF_REUSEADDR;
-	if (tcp_bind_safe(skt, &address, port)) {
+	if (tcp_bind_safe(skt, &address, (uint16_t)port)) {
 		tcp_close_safe(skt);
 		xsUnknownError("socket bind");
 	}
@@ -730,6 +744,7 @@ void xs_listener_close_(xsMachine *the)
 		xsForget(listener->obj);
 		xs_listener_destructor_(listener);
 		xsmcSetHostData(xsThis, NULL);
+		xsmcSetHostDestructor(xsThis, NULL);
 	}
 }
 
@@ -739,11 +754,8 @@ void xs_listener_read(xsMachine *the)
 	ListenerPending pending;
 	TCP tcp;
 
-	if (NULL == listener->pending) {
-		xsDebugger();
-		xsCall0(xsArg(0), xsID_close);
+	if (NULL == listener->pending)
 		return;
-	}
 
 	builtinCriticalSectionBegin();
 	pending = listener->pending;
@@ -761,6 +773,13 @@ void xs_listener_read(xsMachine *the)
 	tcp_arg(tcp->skt, tcp);
 	tcp_err(tcp->skt, tcpError);
 	tcp_recv(tcp->skt, tcpReceive);
+}
+
+void xs_listener_get_port(xsMachine *the)
+{
+	Listener listener = xsmcGetHostDataValidate(xsThis, (void *)&xsListenerHooks);
+
+	xsmcSetInteger(xsResult, listener->skt->local_port);
 }
 
 void listenerDeliver(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
