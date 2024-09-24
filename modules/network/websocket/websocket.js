@@ -141,8 +141,9 @@ export class Client {
 			// generate a "random" mask.  We use Math.random() (built on c_rand) which isn't highly
 			// secure, but esp_random() is quite slow.  
 			mask = new Uint8Array(4);
-			// for (let i = 0; i < 4; i++) mask[i] = (Math.random() * 256) | 0;
-			for (let i = 0; i < 4; i++) mask[i] = 0;
+			for (let i = 0; i < 4; i++) mask[i] = (Math.random() * 256) | 0;  // random mask
+			// for (let i = 0; i < 4; i++) mask[i] = 0; // no mask, makes reading packet traces easier
+
 			// mask the message, which might be a string or a buffer
 			if (typeof message === 'string') message = ArrayBuffer.fromString(message);
 			Logical.xor(message, mask);
