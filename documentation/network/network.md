@@ -591,11 +591,7 @@ The WebSocket `Client` class implements a client for communicating with a WebSoc
 import {Client} from "websocket"
 ```
 
-The WebSocket client implementation is designed for sending and receiving small messages. It has the following limitations:
-
-- Server close does not shut down client sockets.
-- No support for large websocket message types (>126 bytes per message).
-- Messages are not masked when sent.
+The WebSocket client implementation supports sending and receiving messages up to 64K bytes in length.
 
 ### `constructor(dictionary)`
 
