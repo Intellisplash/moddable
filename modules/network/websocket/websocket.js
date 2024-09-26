@@ -234,7 +234,7 @@ export class Client {
 			this._wrappedCallback?.(Client.disconnect, { code, reason });
 
 		// harden close, as we don't know the state of anything if this is happening post-error
-			try {
+		try {
 			this.socket?.close();
 		} catch {
 			_log(this, DebugMode.DEBUG_ERROR, `Error closing client socket (ignoring)`);
@@ -724,7 +724,6 @@ function serverSocketCallback(message, socketByteCount) {
 					socketByteCount = socket.read(); // number of bytes available
 					if (0 !== socketByteCount) {
 						// should be 0. unexpected to receive a websocket message before server receives handshake
-						debugger;
 						socket._wrappedCallback?.(2, socketByteCount);
 					}
 					return;
