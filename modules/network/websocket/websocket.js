@@ -90,6 +90,25 @@ const WSCloseCode = {
     TLS_HANDSHAKE_FAILURE: 1015,   // Failure during the TLS handshake (internal only)
 };
 
+// set to false to see packets as ASCII when possible 
+const debugPacketsInHex = false;
+
+// sets the level of debug tracing of the WS protocol (bitfield)
+const DebugMode = {
+	DEBUG_NONE: 0,
+	DEBUG_MESSAGE: 1,
+	DEBUG_PACKET: 1 << 1,
+	DEBUG_ERROR: 1 << 2,
+	DEBUG_CALLBACK: 1 << 3,
+	DEBUG_API: 1 << 4,
+	DEBUG_ALL: 0xff
+}
+const debugMode = DebugMode.DEBUG_ERROR | DebugMode.DEBUG_MESSAGE;
+
+// messages from client to server should be masked, but if doing protocol inspections/traces it can
+// be useful to not use the client mask (set to false; it is still masked but uses a 0/0/0/0 mask)
+const useClientMask = true;
+
 export class Client {
 	constructor(dictionary) {
 		// port, host, address, path (everything after port)
@@ -107,13 +126,13 @@ export class Client {
 			dictionary.port ??= 80;
 			if (dictionary.Socket) {
 				this.socket = new dictionary.Socket(Object.assign({}, dictionary.Socket, dictionary));
-				// _log(this, 'Client using a custom Socket constructor');
+				_log(this, DebugMode.DEBUG_API, 'Client using a custom Socket constructor');
 			} else 
 				this.socket = new Socket(dictionary);
 		}
 		this.socket.callback = clientSocketCallback.bind(this);
 
-		// _log(this, `new Client(host ${this.host}, path ${this.path})`);
+		_log(this, DebugMode.DEBUG_API, `new Client(host ${this.host}, path ${this.path})`);
 		this._setState(State.connecting);
         this._resetMessageState();
 	}
@@ -136,13 +155,16 @@ export class Client {
 			return;
 		}
 
+		_log(this, DebugMode.DEBUG_MESSAGE, '----> Client.write: ', type, ': ', message);
 		let mask;
 		if (!this.isServer) {
 			// generate a "random" mask.  We use Math.random() (built on c_rand) which isn't highly
 			// secure, but esp_random() is quite slow.  
 			mask = new Uint8Array(4);
-			for (let i = 0; i < 4; i++) mask[i] = (Math.random() * 256) | 0;  // random mask
-			// for (let i = 0; i < 4; i++) mask[i] = 0; // no mask, makes reading packet traces easier
+			if (useClientMask)
+				for (let i = 0; i < 4; i++) mask[i] = (Math.random() * 256) | 0;  // random mask
+			else
+				for (let i = 0; i < 4; i++) mask[i] = 0; // no mask, makes reading packet traces easier
 
 			// mask the message, which might be a string or a buffer
 			if (typeof message === 'string') message = ArrayBuffer.fromString(message);
@@ -152,6 +174,8 @@ export class Client {
 				this._writeSocket(type, length | 0x80, mask, message);
 			else
 				this._writeSocket(type, 126 | 0x80, length >> 8, length & 0x0ff, mask, message);
+			// switch it back again (less expensive than cloning it, or do a write socket per byte)
+			Logical.xor(message, mask);
 		} else {
 			if (length < 126)
 				this._writeSocket(type, length, message);
@@ -159,8 +183,9 @@ export class Client {
 				this._writeSocket(type, 126, length >> 8, length & 0x0ff, message);
 		}
 	}
+	
 	_writeSocket(...args) {
-		// _log(this, 'writeSocket: ', ...args);
+		_log(this, DebugMode.DEBUG_PACKET | DebugMode.DEBUG_MESSAGE, '----> writeSocket: ', ...args);
 		this.socket.write.apply(this.socket, args);
 	}
 
@@ -181,7 +206,7 @@ export class Client {
 			code !== WSCloseCode.TLS_HANDSHAKE_FAILURE &&
 			this.state === State.connected
 		) {
-			// _log(this, `> Client.close: Sending close frame, code ${code}, reason "${reason}"`);
+			_log(this, DebugMode.DEBUG_API, `> Client.close: Sending close frame, code ${code}, reason "${reason}"`);
 			// set up the close frame
 			let closeFrame;
 			closeFrame = new Uint8Array(2 + (reason?.length ?? 0));
@@ -193,7 +218,7 @@ export class Client {
 			try {
 				this._writeMessage(0x88, closeFrame);
 			} catch (e) {
-				// _log(this, `>   Error sending close frame: ${e}`);
+				_log(this, DebugMode.DEBUG_ERROR, `>   Error sending close frame: ${e}`);
 			}
 			this._setState(State.disconnecting);
 			return;
@@ -201,7 +226,7 @@ export class Client {
 
 
 		// tear it down...
-		// _log(this, `> Client.close: Closing socket, code ${code}, state ${_stateMessage(this.state)}`);
+		_log(this, DebugMode.DEBUG_API, `> Client.close: Closing socket, code ${code}, state ${_stateMessage(this.state)}`);
 
 		// report disconnect, but only if we have a socket (to handle case where the callback itself
 		// throws an error and causes a closure as well, to avoid over-reporting the disconnect event)
@@ -212,7 +237,7 @@ export class Client {
 			try {
 			this.socket?.close();
 		} catch {
-			// _log(this, `Error closing client socket (ignoring)`);
+			_log(this, DebugMode.DEBUG_ERROR, `Error closing client socket (ignoring)`);
 		}
 		delete this.socket;
 
@@ -237,7 +262,7 @@ export class Client {
 
 
 	_setState(state) {
-		// _log(this, `*   Set state to ${_stateMessage(state)}`);
+		_log(this, DebugMode.DEBUG_DETAILED, `*   Set state to ${_stateMessage(state)}`);
 		this.state = state;
 	}
 
@@ -257,7 +282,7 @@ export class Client {
 function clientSocketCallback(message, socketByteCount) {
 	let socket = this.socket;
 
-    // _log(this, `CLIENT socket message: ${_socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${_stateMessage(this.state)}`);
+    _log(this, DebugMode.DEBUG_DETAILED, `CLIENT socket message: ${_socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${_stateMessage(this.state)}`);
 
 	if (Socket.connected == message) {
 		if (State.connecting != this.state) {
@@ -338,7 +363,7 @@ function clientSocketCallback(message, socketByteCount) {
 			if ('HTTP/1.1 101' !== line.substring(0, 12)) {
                 this._resetMessageState();
 				const reason = 'HTTP error response';
-				// _log(this, `    web socket upgrade failed: ${line.replace('\r\n', '')}`);
+				_log(this, DebugMode.DEBUG_ERROR, `    web socket upgrade failed: ${line.replace('\r\n', '')}`);
 				this.close(WSCloseCode.PROTOCOL_ERROR, reason);
 				return;
 			}
@@ -397,19 +422,19 @@ function clientSocketCallback(message, socketByteCount) {
 		}
 		if (State.connected === this.state || State.disconnecting === this.state) {
 			// receive message
-			// _log(this, `    Receive message, value ${socketByteCount}, read ${socket.read()}`);
+			_log(this, DebugMode.DEBUG_DETAILED, `    Receive message, value ${socketByteCount}, read ${socket.read()}`);
 
 			while (socketByteCount) {
 				if (ReadState.none == this.readState) {
 					if (this.readTag === undefined) {
 						this.readTag = socket.read(Number);
-						// _log(this, `    readTag is 0x${this.readTag.toString(16)} (tag ${this.readTag & 0x0f})`);
+						_log(this, DebugMode.DEBUG_DETAILED, `    readTag is 0x${this.readTag.toString(16)} (tag ${this.readTag & 0x0f})`);
 						--socketByteCount;
 						continue;
 					}
 					if (this.readLength === undefined) {
 						this.readLength = socket.read(Number);
-						// _log(this, `    Length is ${this.readLength} (actual length ${this.readLength & 0x7f})`);
+						_log(this, DebugMode.DEBUG_DETAILED, `    Length is ${this.readLength} (actual length ${this.readLength & 0x7f})`);
 						--socketByteCount;
 					}
 
@@ -427,7 +452,7 @@ function clientSocketCallback(message, socketByteCount) {
 					if (socketByteCount == 0) continue;
 				}
 				if (ReadState.readLength == this.readState) {
-					// _log(this, '    Request length');
+					_log(this, DebugMode.DEBUG_DETAILED, '    Request length');
 					// read length from next two bytes
 					if (this.byteCount == 0) {
 						this.readLength = socket.read(Number) << 8;
@@ -439,7 +464,7 @@ function clientSocketCallback(message, socketByteCount) {
 						this.readLength |= socket.read(Number);
 						socketByteCount--;
 						this.byteCount = 0;
-						// _log(this, `    Message indicates it has ${this.readLength} bytes in it`);
+						_log(this, DebugMode.DEBUG_DETAILED, `    Message indicates it has ${this.readLength} bytes in it`);
 					}
 					this.readState = ReadState.readBuffer;
 				}
@@ -448,7 +473,7 @@ function clientSocketCallback(message, socketByteCount) {
 					if (this.captureBytes > 0 && !this.captureBuffer) {
 						this.captureBuffer = new Uint8Array(new ArrayBuffer(this.captureBytes));
 						this.captureByteIndex = 0;
-						// _log(this, `    Allocated buffer for reading`);
+						_log(this, DebugMode.DEBUG_DETAILED, `    Allocated buffer for reading`);
 					}
 					// if reading a buffer, keep going until all bytes satisified
 					if (this.captureBuffer && this.captureBytes > 0) {
@@ -458,7 +483,7 @@ function clientSocketCallback(message, socketByteCount) {
 							--this.captureBytes;
 						}
 						if (socketByteCount === 0 && this.captureBytes > 0) {
-							// _log(this, `    Insufficient data, need another ${this.captureBytes} bytes`);
+							_log(this, DebugMode.DEBUG_DETAILED, `    Insufficient data, need another ${this.captureBytes} bytes`);
 							return;
 						}
 					}
@@ -467,12 +492,12 @@ function clientSocketCallback(message, socketByteCount) {
 					if (this.readMask && !this.readMaskBuffer) {
 						if (!this.captureBuffer) {
 							this.captureBytes = 4;
-							// _log(this, `    Requesting 4 bytes for the read mask`);
+							_log(this, DebugMode.DEBUG_DETAILED, `    Requesting 4 bytes for the read mask`);
 							continue;
 						}
 						this.readMaskBuffer = this.captureBuffer.buffer;
 						this.captureBuffer = undefined;
-						// _log(this, `    Got the read mask`);
+						_log(this, DebugMode.DEBUG_DETAILED, `    Got the read mask`);
 					}
 					// if we have a read mask and the mask buffer, unmask the data
 					if (this.readMask && this.readMaskBuffer && this.captureBuffer) 
@@ -484,24 +509,25 @@ function clientSocketCallback(message, socketByteCount) {
 					case 1: // text frame
 					case 2: // binary frame
 							if (!this.captureBuffer) {
-								// _log(this, `    Request ${this.readLength} bytes for the data message`);
+								_log(this, DebugMode.DEBUG_DETAILED, `    Request ${this.readLength} bytes for the data message`);
 								this.captureBytes = this.readLength;
 								continue;
 							}
-							// _log(this, `    Have buffer of ${this.captureBuffer.byteLength} bytes`);
+							// _log(this, DebugMode.DEBUG_DETAILED, `    Have buffer of ${this.captureBuffer.byteLength} bytes`);
+							_log(this, DebugMode.DEBUG_MESSAGE | DebugMode.DEBUG_PACKET, '<---- read: ', this.captureBuffer);
 							this.dataBuffer = this.captureBuffer.buffer;
 							this.captureBuffer = undefined;
 
 							if (1 === (this.readTag & 0x0f)) // text frame
 								this.dataBuffer = String.fromArrayBuffer(this.dataBuffer);
 
-							// _log(this, `    Sending callback with data`);
+							_log(this, DebugMode.DEBUG_DETAILED, `    Sending callback with data`);
 							this._wrappedCallback?.(Client.receive, this.dataBuffer);
 							this._resetMessageState();
 						break;
 					case 8: // close frame
 						if (!this.captureBuffer) {
-							// _log(this, `    Request ${this.readLength} bytes for the close message`);
+							_log(this, DebugMode.DEBUG_DETAILED, `    Request ${this.readLength} bytes for the close message`);
 							this.captureBytes = this.readLength;
 							continue;
 						}
@@ -509,7 +535,7 @@ function clientSocketCallback(message, socketByteCount) {
 						const code = this.captureBuffer.byteLength >= 2 ? (this.captureBuffer[0] << 8 | this.captureBuffer[1]) : WSCloseCode.ABNORMAL_CLOSURE;
 						const reason = this.captureBuffer.byteLength > 2 ? String.fromArrayBuffer(this.captureBuffer.slice(2).buffer) : '';
 						
-						// _log(this, `    Close frame received, code ${code}, reason "${reason}"`);
+						_log(this, DebugMode.DEBUG_MESSAGE, `    Close frame received, code ${code}, reason "${reason}"`);
 
 						// trigger close, which will send a close response if our state was connected
 						this.close(code, reason);
@@ -534,7 +560,7 @@ function clientSocketCallback(message, socketByteCount) {
 							this._resetMessageState();
 						break;
 					default:
-						this.// _log(this, `> Unrecognized frame type: ${this.readTag & 0x0f}`);
+						this._log(this, DebugMode.DEBUG_ERROR, `> Unrecognized frame type: ${this.readTag & 0x0f}`);
 							this._resetMessageState();
 						break;
 				    }
@@ -551,7 +577,7 @@ function clientSocketCallback(message, socketByteCount) {
 	if (Socket.writable === message) {
 		// data has been sent
 		const bytesAvailable = Math.min(this.socket.write() - MIN_BUFFER_FREE_SPACE);
-		// _log(this, `    Got datasent message, write says ${this.socket.write()} resulting in ${bytesAvailable} bytes available`);
+		_log(this, DebugMode.DEBUG_DETAILED, `    Got datasent message, write says ${this.socket.write()} resulting in ${bytesAvailable} bytes available`);
 		if (bytesAvailable > 0) 
 			this._wrappedCallback?.(Client.datasent, bytesAvailable);
 	}
@@ -594,7 +620,7 @@ export class Server {
 			try {
 				this.#listener.close();
 			} catch {
-				// _log(this, `Error closing server socket (ignoring)`);
+				_log(this, DebugMode.DEBUG_ERROR, `Error closing server socket (ignoring)`);
 			}
 			this.#listener = undefined;
 		}
@@ -634,7 +660,7 @@ function serverSocketCallback(message, socketByteCount) {
 
 	if (!this.socket) return;
 
-	// _log(this, `SERVER socket message: ${_socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${_stateMessage(this.state)}`);
+	_log(this, DebugMode.DEBUG_DETAILED, `SERVER socket message: ${_socketMessage(message)}${message == Socket.readable ? ' (read ' + socketByteCount + ' bytes)' : ''}, state ${_stateMessage(this.state)}`);
 
 	if (Socket.readable == message) {
 		if (State.sendingHandshake === this.state || State.receivingHeaders === this.state) {
@@ -766,64 +792,72 @@ function serverSocketCallback(message, socketByteCount) {
 
 function wrappedCallbackHandler(self, message, value) {
 	if (!self.origCallback) {
-		// _log(self, `Callback ignored; no callback defined: callback(${message}, ${value})`);
+		_log(self, DebugMode.DEBUG_API, `Callback ignored; no callback defined: callback(${message}, ${value})`);
 		return undefined;
 	}
-	// _log(self, `Callback: callback(${_callbackMessage(message)})`);
+	_log(self, DebugMode.DEBUG_API, `Callback: callback(${_callbackMessage(message)})`);
 
 	return self.origCallback(message, value);
 }
 
-// function _log(self, ...args) {
-// 	trace(`${self.isServer ? '<warn>' : '<info>'}WS ${self.isServer ? 'server' : 'client'}: `);
+function _log(self, debugLevel, ...args) {
+	if ((debugLevel & debugMode) === 0) return;
+	trace(`${self.isServer ? '<warn>' : '<info>'}WS ${self.isServer ? 'server' : 'client'}: `);
 
-// 	for (const arg of args) {
-// 		if (typeof arg === 'string') trace(`${arg.replace('\n', '\\n').replace('\r', '\\r')} `);
-// 		else if (typeof arg == "object" && "byteLength" in arg) {
-// 			const view = new Uint8Array(arg);
-// 			for (const byte of view) trace(`0x${byte.toString(16)} `);
-// 		} 
-// 		else if (typeof arg === 'number') trace(`0x${arg.toString(16)} `);
-// 		else trace('[unknown type typeof arg]');
-// 	}
-// 	trace('\n');
-// }
+	for (const arg of args) {
+		if (typeof arg === 'string') trace(`${arg.replace('\n', '\\n').replace('\r', '\\r')} `);
+		else if (typeof arg == "object" && "byteLength" in arg) {
+			const view = new Uint8Array(arg);
+			for (const byte of view) {
+				if (debugPacketsInHex)
+					trace(`0x${byte.toString(16)} `);
+				else if (byte < 0x20 || byte >= 0x7f)
+					trace(`[0x${byte.toString(16)}]`);
+				else
+					trace(`${String.fromCharCode(byte)}`);
+			}
+		} 
+		else if (typeof arg === 'number') trace(`0x${arg.toString(16)} `);
+		else trace('[unknown type typeof arg]');
+	}
+	trace('\n');
+}
 
-// function _socketMessage(message) {
-// 	switch (message) {
-// 		case Socket.connected: return 'CONNECTED';
-// 		case Socket.readable: return 'READABLE';
-// 		case Socket.writable: return 'WRITABLE';
-// 		case Socket.error: return 'ERROR';
-// 		case Socket.disconnected: return 'DISCONNECTED';
-// 		default: return `UNKNOWN (${message})`;
-// 	}
-// }
+function _socketMessage(message) {
+	switch (message) {
+		case Socket.connected: return 'CONNECTED';
+		case Socket.readable: return 'READABLE';
+		case Socket.writable: return 'WRITABLE';
+		case Socket.error: return 'ERROR';
+		case Socket.disconnected: return 'DISCONNECTED';
+		default: return `UNKNOWN (${message})`;
+	}
+}
 
-// function _stateMessage(state) {
-// 	switch (state) {
-// 		case State.connecting: return 'CONNECTING';
-// 		case State.sendingHandshake: return 'SENDING-HANDSHAKE';
-// 		case State.receivingHeaders: return 'RECEIVING-HEADERS';
-// 		case State.connected: return 'CONNECTED';
-// 		case State.disconnecting: return 'DISCONNECTING';
-// 		case State.done: return 'DONE';
-// 		default: return `UNKNOWN ${state}`;
-// 	}
-// }
+function _stateMessage(state) {
+	switch (state) {
+		case State.connecting: return 'CONNECTING';
+		case State.sendingHandshake: return 'SENDING-HANDSHAKE';
+		case State.receivingHeaders: return 'RECEIVING-HEADERS';
+		case State.connected: return 'CONNECTED';
+		case State.disconnecting: return 'DISCONNECTING';
+		case State.done: return 'DONE';
+		default: return `UNKNOWN ${state}`;
+	}
+}
 
-// function _callbackMessage(message) {
-// 	switch (message) {
-// 		case Client.connect: return 'CONNECT';
-// 		case Client.handshake: return 'HANDSHAKE';
-// 		case Client.receive: return 'RECEIVE';
-// 		case Client.disconnect: return 'DISCONNECT';
-// 		case Server.subprotocol: return 'SUBPROTOCOL';
-// 		case Client.datasent: return 'DATASENT';
-// 		case Client.error: return 'ERROR';
-// 		default: return `UNKNOWN ${message}`;
-// 	}
-// }
+function _callbackMessage(message) {
+	switch (message) {
+		case Client.connect: return 'CONNECT';
+		case Client.handshake: return 'HANDSHAKE';
+		case Client.receive: return 'RECEIVE';
+		case Client.disconnect: return 'DISCONNECT';
+		case Server.subprotocol: return 'SUBPROTOCOL';
+		case Client.datasent: return 'DATASENT';
+		case Client.error: return 'ERROR';
+		default: return `UNKNOWN ${message}`;
+	}
+}
 
 
 Server.connect = 1;
