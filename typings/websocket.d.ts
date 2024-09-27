@@ -58,7 +58,7 @@ declare module "websocket" {
   export type WebSocketClientCallback =
     | ((message: WebSocketClientMessage.connect, server: Server) => void)
     | ((message: WebSocketClientMessage.disconnect, cause: WSCloseArguments) => void)
-    | ((message: WebSocketClientMessage.receive, data: String | ArrayBuffer) => void)
+    | ((message: WebSocketClientMessage.receive, data: String | ArrayBufferLike) => void)
     | ((message: WebSocketClientMessage.handshake) => void)
     | ((message: WebSocketClientMessage.datasent) => void)
     | ((message: WebSocketClientMessage.error, reason: string) => void);
@@ -73,7 +73,7 @@ declare module "websocket" {
 
     constructor(options: WebSocketClientOptions);
     close(code?: WebSocketCloseCode, reason?: string): void;
-    write(data?: string | ArrayBuffer): number;
+    write(data?: string | ArrayBufferLike): number;
     set callback(cb: WebSocketClientCallback);
     detach(): Socket;
     readonly socket: Socket;

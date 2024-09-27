@@ -103,7 +103,7 @@ const DebugMode = {
 	DEBUG_API: 1 << 4,
 	DEBUG_ALL: 0xff
 }
-const debugMode = DebugMode.DEBUG_ERROR | DebugMode.DEBUG_MESSAGE;
+const debugMode = DebugMode.NONE; // DebugMode.DEBUG_ERROR | DebugMode.DEBUG_MESSAGE;
 
 // messages from client to server should be masked, but if doing protocol inspections/traces it can
 // be useful to not use the client mask (set to false; it is still masked but uses a 0/0/0/0 mask)
@@ -185,7 +185,7 @@ export class Client {
 	}
 	
 	_writeSocket(...args) {
-		_log(this, DebugMode.DEBUG_PACKET | DebugMode.DEBUG_MESSAGE, '----> writeSocket: ', ...args);
+		_log(this, DebugMode.DEBUG_PACKET, '----> writeSocket: ', ...args);
 		this.socket.write.apply(this.socket, args);
 	}
 
@@ -217,11 +217,12 @@ export class Client {
 
 			try {
 				this._writeMessage(0x88, closeFrame);
+				this._setState(State.disconnecting);
+				return;
 			} catch (e) {
 				_log(this, DebugMode.DEBUG_ERROR, `>   Error sending close frame: ${e}`);
 			}
-			this._setState(State.disconnecting);
-			return;
+			// fall into full tear down if we can't send the close frame
 		}
 
 
