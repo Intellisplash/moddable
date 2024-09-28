@@ -103,7 +103,7 @@ const DebugMode = {
 	DEBUG_API: 1 << 4,
 	DEBUG_ALL: 0xff
 }
-const debugMode = DebugMode.NONE; // DebugMode.DEBUG_ERROR | DebugMode.DEBUG_MESSAGE;
+const debugMode = DebugMode.DEBUG_NONE;
 
 // messages from client to server should be masked, but if doing protocol inspections/traces it can
 // be useful to not use the client mask (set to false; it is still masked but uses a 0/0/0/0 mask)
@@ -195,7 +195,7 @@ export class Client {
 		delete this.socket;
 		return socket;
 	}
-	close(code, reason, doNotReport) {
+	close(code, reason) {
 		if (!this.socket) return;
 		if (code === undefined) code = WSCloseCode.NORMAL_CLOSURE;
 
@@ -363,9 +363,12 @@ function clientSocketCallback(message, socketByteCount) {
 
 			if ('HTTP/1.1 101' !== line.substring(0, 12)) {
                 this._resetMessageState();
-				const reason = 'HTTP error response';
+				const reason = 'upgrade failed';
 				_log(this, DebugMode.DEBUG_ERROR, `    web socket upgrade failed: ${line.replace('\r\n', '')}`);
-				this.close(WSCloseCode.PROTOCOL_ERROR, reason);
+				this._wrappedCallback?.(Client.error, reason);
+				// set ABNORMAL_CLOSURE as we don't have a websocket connection and need to use an
+				// internal code to force a direct closure
+				this.close(WSCloseCode.ABNORMAL_CLOSURE, reason);
 				return;
 			}
 			this._setState(State.receivingHeaders);
@@ -541,8 +544,8 @@ function clientSocketCallback(message, socketByteCount) {
 						// trigger close, which will send a close response if our state was connected
 						this.close(code, reason);
 						// if our state is disconnecting, we need to call close again to actually
-						// close the socket as we handling the response not the request
-						if (this.state === State.disconnecting) this.close(code, reason, true);
+						// close the socket as we are handling the response not the request
+						if (this.state === State.disconnecting) this.close(code, reason);
 
 						return;
 					case 9: // ping frame
