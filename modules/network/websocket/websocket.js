@@ -168,14 +168,15 @@ export class Client {
 
 			// mask the message, which might be a string or a buffer
 			if (typeof message === 'string') message = ArrayBuffer.fromString(message);
-			Logical.xor(message, mask);
-
+			// create a new buffer with all values from message xor'd with the mask
+			const messageView = new Uint8Array(message);
+			const xorMessage = new Uint8Array(length);
+			for (let i = 0; i < length; i++) 
+				xorMessage[i] = messageView[i] ^ mask[i % 4];
 			if (length < 126)
-				this._writeSocket(type, length | 0x80, mask, message);
+				this._writeSocket(type, length | 0x80, mask, xorMessage);
 			else
-				this._writeSocket(type, 126 | 0x80, length >> 8, length & 0x0ff, mask, message);
-			// switch it back again (less expensive than cloning it, or do a write socket per byte)
-			Logical.xor(message, mask);
+				this._writeSocket(type, 126 | 0x80, length >> 8, length & 0x0ff, mask, xorMessage);
 		} else {
 			if (length < 126)
 				this._writeSocket(type, length, message);
