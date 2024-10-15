@@ -220,22 +220,6 @@ Each example application in the Moddable SDK includes at least one of the manife
 
 Several touch, display, and sensor [drivers](../../modules/drivers) and some [networking modules](../../modules/network) also have manifests to make it easier to incorporate them into your projects.
 
-<a id="uninclude"></a>
-### `uninclude`
-
-The `uninclude` array lists manifests that should not be included.  Names must exactly match an `include` in a manifest not yet processed, which are all manifest files (and their sub-includes) in the current manifest file, as well as the platform/subplatform manifests.
-
-For example, to change the directory for subplatforms only on `ESP32` the following can be used:
-
-```json
-	"platforms": {
-		"esp32/*": {
-			"uninclude": "./targets/$(SUBPLATFORM)/manifest.json",
-			"include": "$(SRC)/targets/$(SUBPLATFORM)/manifest.json"
-		}
-	}
-```
-
 <a id="include-git"></a>
 #### Including Git Repositories
 A manifest may directly include git repositories. The repositories are cloned as part of the build process and stored with the project's temporary build files.
@@ -296,6 +280,24 @@ Specific branches and tags are accessed using the optional `branch` and `tag` pr
 The hostname, pathname. branch, and tag are included in the path where the cloned repositories are stored to avoid conflicts.
 
 > **Note**: Cloned repositories are deleted when the project is cleaned (`mcconfig -d -m -t clean`). Therefore, the cloned repositories should not be edited.
+
+***
+
+<a id="uninclude"></a>
+### `uninclude`
+
+The `uninclude` array lists manifests that should not be included.  Names must exactly match an `include` in a manifest not yet processed, which are all manifest files (and their sub-includes) in the current manifest file, as well as the platform/subplatform manifests.
+
+For example, to change the directory for subplatforms only on `ESP32` the following can be used:
+
+```json
+	"platforms": {
+		"esp32/*": {
+			"uninclude": "./targets/$(SUBPLATFORM)/manifest.json",
+			"include": "$(SRC)/targets/$(SUBPLATFORM)/manifest.json"
+		}
+	}
+```
 
 ***
 
