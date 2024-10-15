@@ -101,6 +101,7 @@ const DebugMode = {
 	DEBUG_ERROR: 1 << 2,
 	DEBUG_CALLBACK: 1 << 3,
 	DEBUG_API: 1 << 4,
+	DEBUG_DETAILED: 1 << 5,
 	DEBUG_ALL: 0xff
 }
 const debugMode = DebugMode.DEBUG_NONE;
