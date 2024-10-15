@@ -12,6 +12,7 @@ A manifest is a JSON file that describes the modules and resources necessary to 
 	* [`build`](#build)
 	* [`include`](#include)
 		* [Including git repositories](#include-git)
+	* [`uninclude`](#uninclude)
 	* [`creation`](#creation)
 	* [`defines`](#defines)
 	* [`config`](#config)
@@ -218,6 +219,22 @@ Each example application in the Moddable SDK includes at least one of the manife
 - `manifest_piu.json` is for applications that use the [Piu application framework](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/piu/piu.md). It includes all the modules needed to use Piu. The screen and touch drivers are provided elsewhere, typically by the manifest of the target device itself, to keep the Piu manifest device independent.
 
 Several touch, display, and sensor [drivers](../../modules/drivers) and some [networking modules](../../modules/network) also have manifests to make it easier to incorporate them into your projects.
+
+<a id="uninclude"></a>
+### `uninclude`
+
+The `uninclude` array lists manifests that should not be included.  Names must exactly match an `include` in a manifest not yet processed, which are all manifest files (and their sub-includes) in the current manifest file, as well as the platform/subplatform manifests.
+
+For example, to change the directory for subplatforms only on `ESP32` the following can be used:
+
+```json
+	"platforms": {
+		"esp32/*": {
+			"uninclude": "./targets/$(SUBPLATFORM)/manifest.json",
+			"include": "$(SRC)/targets/$(SUBPLATFORM)/manifest.json"
+		}
+	}
+```
 
 <a id="include-git"></a>
 #### Including Git Repositories
