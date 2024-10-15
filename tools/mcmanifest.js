@@ -1905,6 +1905,8 @@ export class Tool extends TOOL {
 	includeManifest(it) {
 		var currentDirectory = this.currentDirectory;
 		if ("string" == typeof it) {
+			if (this.uninclude?.includes(it))
+				return;
 			this.includeManifestPath(this.resolveVariable(it));
 		}
 		else if (this.buildTarget != "clean") {
@@ -2184,6 +2186,7 @@ export class Tool extends TOOL {
 	}
 	parseManifest(path, manifest) {
 		let platformInclude;
+		let platformUninclude;
 		if (!manifest) {
 			var buffer = this.readFileString(path);
 			try {
@@ -2206,6 +2209,7 @@ export class Tool extends TOOL {
 			if (platform) {
 				this.parseBuild(platform);
 				platformInclude = platform.include;
+				platformUninclude = platform.uninclude;
 				if (platformInclude) {
 					if (!("include" in manifest))
 						manifest.include = platformInclude;
@@ -2214,6 +2218,13 @@ export class Tool extends TOOL {
 							manifest.include = [manifest.include];
 						manifest.include = manifest.include.concat(platformInclude);
 					}
+				}
+				if (platformUninclude) {
+					if (!this.uninclude)
+						this.uninclude = [];
+					if ("string" === typeof manifest.uninclude)
+						this.uninclude.push(manifest.uninclude);
+					this.uninclude = this.uninclude.concat(platformUninclude);
 				}
 				if (platform.dependency && ("esp32" == this.platform)) {
 					manifest.dependencies = [];
