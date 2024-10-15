@@ -565,7 +565,7 @@ function clientSocketCallback(message, socketByteCount) {
 							this._resetMessageState();
 						break;
 					default:
-						this._log(this, DebugMode.DEBUG_ERROR, `> Unrecognized frame type: ${this.readTag & 0x0f}`);
+						_log(this, DebugMode.DEBUG_ERROR, `> Unrecognized frame type: ${this.readTag & 0x0f}`);
 							this._resetMessageState();
 						break;
 				    }
