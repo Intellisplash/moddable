@@ -20,7 +20,7 @@
 
 declare module "embedded:io/socket/tcp" {
   import type { Buffer } from "embedded:io/_common";
-  export type Options = ((({
+  export type TCPSocketOptions = ((({
     address: string;
   } | {
     host: string;
@@ -38,7 +38,7 @@ declare module "embedded:io/socket/tcp" {
   };
   
   export default class TCP {
-    constructor(options: Options)
+    constructor(options: TCPSocketOptions)
     readonly remoteAddress: string | undefined;
     readonly remotePort: number | undefined;
     read(byteLength?: number): number | ArrayBuffer;

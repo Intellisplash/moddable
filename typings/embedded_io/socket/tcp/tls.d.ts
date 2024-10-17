@@ -1,11 +1,11 @@
 declare module "embedded:io/socket/tcp/tls" {
-  import { Options as TCPOptions } from "embedded:io/socket/tcp"
-  export type Options = TCPOptions & {
+  import { TCPSocketOptions as TCPOptions } from "embedded:io/socket/tcp"
+  export type TLSSocketOptions = TCPOptions & {
     host: string
     secure: Record<string, any> // should be called "tls" according to std?
   }
   export default class TLSSocket {
-    constructor(options: Options) 
+    constructor(options: TLSSocketOptions) 
     close(): undefined
     read(count: number|ArrayBufferLike) : undefined|ArrayBufferLike
     write(buffer: ArrayBufferLike) : number

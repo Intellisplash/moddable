@@ -20,16 +20,20 @@
 
 declare module "embedded:network/dns/resolver/udp" {
 
-  interface Options {
+  export interface DNSUDPOptions {
+    http: never;
+    servers: string[];
+  }
+  interface ResolveOptions {
     host: string
     onResolved: ((host:string, address:any) => null)
     onError: ((host:string) => null)
   }
 
   class Resolver {
-    constructor(options: Record<string, any>)
+    constructor(options: DNSUDPOptions)
     close(): void
-    resolve(options: Options): void
+    resolve(options: ResolveOptions): void
 
   }
 

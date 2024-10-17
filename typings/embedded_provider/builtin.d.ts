@@ -29,6 +29,8 @@ declare module "embedded:provider/builtin" {
   import SMBus from "embedded:io/smbus";
   import SPI from "embedded:io/spi";
   import Serial from "embedded:io/serial";
+  import type WebSocketClient from 'embedded:network/websocket/client';
+  import type { WebSocketClientOptions } from 'embedded:network/websocket/client';
   import type { PinSpecifier } from "embedded:io/_common";
   const device: {
     io: {
@@ -52,6 +54,16 @@ declare module "embedded:provider/builtin" {
     SPI: { default: ConstructorParameters<typeof SPI>[0] };
     Serial: { default: ConstructorParameters<typeof Serial>[0] };
     pin: { [name: string]: PinSpecifier };
+    network: {
+      ws: {
+        io: typeof WebSocketClient;
+        client: WebSocketClientOptions;
+      }
+      wss: {
+        io: typeof WebSocketClient;
+        client: WebSocketClientOptions;
+      }
+    };
   };
   export default device;
 }
