@@ -1629,6 +1629,7 @@ export class Tool extends TOOL {
 		this.windows = this.currentPlatform == "win";
 		this.slash = this.windows ? "\\" : "/";
 		this.escapedHash = this.windows ? "^#" : "\\#";
+		this.redirectRules = [];
 
 		this.buildPath = this.moddablePath + this.slash + "build";
 		this.xsPath = this.moddablePath + this.slash + "xs";
@@ -1905,8 +1906,6 @@ export class Tool extends TOOL {
 	includeManifest(it) {
 		var currentDirectory = this.currentDirectory;
 		if ("string" == typeof it) {
-			if (this.uninclude?.includes(it))
-				return;
 			this.includeManifestPath(this.resolveVariable(it));
 		}
 		else if (this.buildTarget != "clean") {
@@ -2186,7 +2185,7 @@ export class Tool extends TOOL {
 	}
 	parseManifest(path, manifest) {
 		let platformInclude;
-		let platformUninclude;
+
 		if (!manifest) {
 			var buffer = this.readFileString(path);
 			try {
@@ -2209,7 +2208,6 @@ export class Tool extends TOOL {
 			if (platform) {
 				this.parseBuild(platform);
 				platformInclude = platform.include;
-				platformUninclude = platform.uninclude;
 				if (platformInclude) {
 					if (!("include" in manifest))
 						manifest.include = platformInclude;
@@ -2219,12 +2217,8 @@ export class Tool extends TOOL {
 						manifest.include = manifest.include.concat(platformInclude);
 					}
 				}
-				if (platformUninclude) {
-					if (!this.uninclude)
-						this.uninclude = [];
-					if ("string" === typeof manifest.uninclude)
-						this.uninclude.push(manifest.uninclude);
-					this.uninclude = this.uninclude.concat(platformUninclude);
+				if ("redirect" in platform) {
+					this.redirectRules = this.redirectRules.concat(platform.redirect);
 				}
 				if (platform.dependency && ("esp32" == this.platform)) {
 					manifest.dependencies = [];
@@ -2237,6 +2231,10 @@ export class Tool extends TOOL {
 				}
 			}
 		}
+		if ("redirect" in manifest) {
+			this.redirectRules = this.redirectRules.concat(manifest.redirect);
+		}
+		this.redirect(manifest);
 		if ("include" in manifest) {
 			if (manifest.include instanceof Array)
 				manifest.include.forEach(include => this.includeManifest(include));
@@ -2245,6 +2243,80 @@ export class Tool extends TOOL {
 		}
 		this.manifests.push(manifest);
 		return manifest;
+	}
+	redirect(manifest) {
+		let platform;
+		if ("platforms" in manifest)
+			platform = this.matchPlatform(manifest.platforms, this.fullplatform, false);
+		for (const redirectRule of this.redirectRules) {
+			for (const manifestProperty of Object.keys(redirectRule)) {
+				if (!Array.isArray(redirectRule[manifestProperty]))
+					redirectRule[manifestProperty] = [redirectRule[manifestProperty]];
+				if (["include", "strip", "preload"].includes(manifestProperty)) {
+					for (const singleRule of redirectRule[manifestProperty]) {
+						if (singleRule === null || !("from" in singleRule))
+							throw new Error(`Missing "from" in redirect rule for property "${manifestProperty}"`);
+						this.redirectArray(manifest, manifestProperty, singleRule.from , singleRule.to);
+						if (platform)
+							this.redirectArray(platform, manifestProperty, singleRule.from, singleRule.to);
+					}
+				} else if (["modules", "resources", "data", "build", "config"].includes(manifestProperty)) {
+					for (const keyedRule of redirectRule[manifestProperty]) {
+						if (keyedRule === null || "object" !== typeof keyedRule)
+							throw new Error(`Invalid redirect rule "${manifestProperty}" (must be object, not ${typeof keyedRule})`);
+						for (const singleRuleKey of Object.keys(keyedRule)) {
+							const singleRule = keyedRule[singleRuleKey];
+							if (singleRule === null || "object" !== typeof singleRule)
+								throw new Error(`Invalid redirect rule "${manifestProperty}.${singleRuleKey}" (must be object, not ${typeof singleRule})`);
+							if (!("from" in singleRule))
+								throw new Error(`Missing "from" in redirect rule for property "${manifestProperty}"`);
+							this.redirectObject(manifest, manifestProperty, singleRuleKey, keyedRule[singleRuleKey].from, keyedRule[singleRuleKey].to);
+							if (platform)
+								this.redirectObject(platform, manifestProperty, singleRuleKey, keyedRule[singleRuleKey].from, keyedRule[singleRuleKey].to);
+						}
+					}
+				}
+				else
+					throw new Error(`Redirect not supported for property "${manifestProperty}"`);
+			}
+		}
+	}
+	redirectArray(manifest, property, from, to) {
+		if (!from) {
+			if (property in manifest) {
+				manifest[property] = to ?? [];
+			} 
+		} else if ("string" == typeof from) {
+			if (property in manifest) {
+				let array = Array.isArray(manifest[property]) ? manifest[property] : [manifest[property]];
+				if (array.includes(from)) {
+					if (to) {
+						if (Array.isArray(manifest[property]) && from)
+							manifest[property] = manifest[property].map(item => item == from ? to : item);
+						else
+							manifest[property] = to;
+					} else {
+						if (Array.isArray(manifest[property]) && manifest[property].length > 1)
+							manifest[property] = manifest[property].filter(item => item != from);
+						else
+							delete manifest[property];
+					}
+				}
+			}
+		} else
+			throw new Error(`Invalid redirect rule "${property}.from" (must be string or null, not ${typeof from})`);
+	}
+	redirectObject(manifest, property, key, from, to) {
+		if (!from) {
+			if (property in manifest) {
+				manifest[property] = to ?? {};
+			}
+		} else if ("string" === typeof from) {
+			if (property in manifest) {
+				this.redirectArray(manifest[property], key, from, to);
+			}
+		} else
+			throw new Error(`Invalid redirect rule "${property}.${key}" (must be object or null, not ${typeof from})`);
 	}
 	resolvePrefix(value) {
 		const colon = value.indexOf(":");
@@ -2311,6 +2383,7 @@ export class Tool extends TOOL {
 		this.manifests.forEach(manifest => this.mergeManifest(this.manifest, manifest));
 
 		this.mergeDependencies(this.manifests);
+		this.redirect(this.manifest);
 	
 		if (this.manifest.errors.length) {
 			this.manifest.errors.forEach(error => { this.reportError(null, 0, error); });
