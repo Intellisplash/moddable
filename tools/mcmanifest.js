@@ -2291,10 +2291,9 @@ export class Tool extends TOOL {
 				let array = Array.isArray(manifest[property]) ? manifest[property] : [manifest[property]];
 				if (array.includes(from)) {
 					if (to) {
-						if (Array.isArray(manifest[property]) && from)
-							manifest[property] = manifest[property].map(item => item == from ? to : item);
-						else
-							manifest[property] = to;
+						if (!Array.isArray(manifest[property]))
+							manifest[property] = [manifest[property]];
+						manifest[property] = manifest[property].filter(item => item != from).concat(to);
 					} else {
 						if (Array.isArray(manifest[property]) && manifest[property].length > 1)
 							manifest[property] = manifest[property].filter(item => item != from);
