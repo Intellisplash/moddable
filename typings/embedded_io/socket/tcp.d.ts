@@ -17,26 +17,26 @@
  *   along with the Moddable SDK Tools.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-import type { Buffer } from "embedded:io/_common";
-import type UDP from "embedded:io/socket/udp";
-
 declare module "embedded:io/socket/tcp" {
+	import type { Buffer } from "embedded:io/_common";
+	import type UDP from "embedded:io/socket/udp";
+
 	export type TCPOptions = ((({
-	address: string;
+		address: string;
 	} | {
-	host: string;
-  }) & {
-	port: number;
-  }) | {
-	from: TCP;
-  }) & {
-	nodelay?: boolean;
-	onReadable?: (this: TCP, bytes: number) => void;
-	onWritable?: (this: TCP, bytes: number) => void;
-	onError?: (this: TCP) => void;
-	format?: "number" | "buffer";
-	// target?: any; // this does not appear in the implementation?
-};
+		host: string;
+	}) & {
+		port: number;
+	}) | {
+		from: TCP;
+	}) & {
+		nodelay?: boolean;
+		onReadable?: (this: TCP, bytes: number) => void;
+		onWritable?: (this: TCP, bytes: number) => void;
+		onError?: (this: TCP) => void;
+		format?: "number" | "buffer";
+		// target?: any; // this does not appear in the implementation?
+	};
 
 	export type TCPDevice = TCPOptions & { io: typeof UDP };
 
