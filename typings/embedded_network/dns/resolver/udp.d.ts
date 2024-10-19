@@ -19,23 +19,27 @@
 */
 
 declare module "embedded:network/dns/resolver/udp" {
+  import type { UDPDevice } from 'embedded:io/socket/udp';
 
   export interface DNSUDPOptions {
     http: never;
     servers: string[];
+    socket: UDPDevice;
   }
-  interface ResolveOptions {
-    host: string
-    onResolved: ((host:string, address:any) => null)
-    onError: ((host:string) => null)
+
+  export interface DNSUDPResolveOptions {
+    host: string;
+    onResolved: ((host:string, address:any) => null);
+    onError: ((host:string) => null);
   }
+
+  export type DNSUDPDevice = DNSUDPOptions & { io: typeof Resolver };
 
   class Resolver {
-    constructor(options: DNSUDPOptions)
-    close(): void
-    resolve(options: ResolveOptions): void
-
+    constructor(options: DNSUDPOptions);
+    close(): void;
+    resolve(options: DNSUDPResolveOptions): void;
   }
 
-  export default Resolver
+  export default Resolver;
 }

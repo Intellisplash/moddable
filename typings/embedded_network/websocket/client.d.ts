@@ -1,11 +1,12 @@
-declare module 'embedded:network/websocket/client' {
-	import type { DNSUDPOptions } from 'embedded:network/dns/resolver/udp';
-	import type { Buffer } from 'embedded:io/_common';
-	import type TCP from 'embedded:io/socket/tcp';
-	import type { TCPSocketOptions } from 'embedded:io/socket/tcp';
-	import type TLSSocket from 'embedded:io/socket/tcp/tls';
-	import type { TLSSocketOptions } from 'embedded:io/socket/tcp/tls';
-
+declare module "embedded:network/websocket/client" {
+	import type { DNSUDPOptions } from "embedded:network/dns/resolver/udp";
+	import type { Buffer } from "embedded:io/_common";
+	import type TCP from "embedded:io/socket/tcp";
+	import type { TCPOptions } from "embedded:io/socket/tcp";
+	import type TLSSocket from "embedded:io/socket/tcp/tls";
+	import type { TLSOptions } from "embedded:io/socket/tcp/tls";
+	import "embedded:network/websocket/client-device";
+	
 	interface WebSocketClientReadableOptions {
 		more: boolean;
 		binary: boolean;
@@ -21,12 +22,12 @@ declare module 'embedded:network/websocket/client' {
 
 	interface WebSocketClientOptions {
 		attach?: TCP | TLSSocket;
-		socket?: TCPSocketOptions | TLSSocketOptions;
+		socket?: TCPOptions | TLSOptions;
 		host?: string;
 		port?: number;
 		protocol?: string;
 		headers?: Map<string, string>;
-		dns?: DNSUDPOptions;		// spec says required, but when using attach it appears to be optional?
+		dns?: DNSUDPOptions;
 		onReadable?: (count: number, options?: WebSocketClientReadableOptions) => void;
 		onWritable?: (count: number) => void;
 		onControl?: (opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?

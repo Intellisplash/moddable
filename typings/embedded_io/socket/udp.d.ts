@@ -20,27 +20,36 @@
 
 declare module "embedded:io/socket/udp" {
   import type { Buffer } from "embedded:io/_common";
+
+  interface UDPOptionsBase {
+    port?: number;
+    address?: string;
+    onReadable?: (this: UDP, packets: number) => void;
+    onError?: () => void;
+    format?: "buffer";
+    // target?: any; // this does not appear in the implementation?
+  }
+  
+  interface UDPMulticastOptions {
+    multicast: string;
+    timeToLive: number;
+  }
+  
+  export type UDPOptions = UDPOptionsBase & ({} | UDPMulticastOptions);
+
+  export type UDPDevice = UDPOptions & { io: typeof UDP };
+
   class UDP {
-    constructor(options: {
-      port?: number;
-      address?: string;
-      onReadable?: (this: UDP, packets: number) => void;
-      onError?: () => void;
-      format?: "buffer";
-      target?: any;
-    } & ({} | {
-      multicast: string;
-      timeToLive: number;
-    }))
+    constructor(options: UDPOptions)
     write(buffer: Buffer, address: string, port: number): void;
     read(): ArrayBuffer & {
       address: string;
       port: number;
     };
-    read(buffer: Buffer);
+    read(buffer: Buffer): number;
     get format(): "buffer"
     set format(value: "buffer")
   }
-
-  export default UDP
+  
+  export default UDP;
 }
