@@ -22,7 +22,7 @@ declare module "embedded:network/dns/resolver/udp" {
   import type { UDPDevice } from 'embedded:io/socket/udp';
 
   export interface DNSUDPOptions {
-    http: never;
+    http?: never;
     servers: string[];
     socket: UDPDevice;
   }

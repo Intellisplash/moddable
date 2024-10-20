@@ -27,7 +27,6 @@ declare module "embedded:io/socket/udp" {
     onReadable?: (this: UDP, packets: number) => void;
     onError?: () => void;
     format?: "buffer";
-    // target?: any; // this does not appear in the implementation?
   }
   
   interface UDPMulticastOptions {

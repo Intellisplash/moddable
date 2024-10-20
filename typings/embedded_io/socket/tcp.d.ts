@@ -21,22 +21,20 @@ declare module "embedded:io/socket/tcp" {
 	import type { Buffer } from "embedded:io/_common";
 	import type UDP from "embedded:io/socket/udp";
 
-	export type TCPOptions = ((({
-		address: string;
-	} | {
-		host: string;
-	}) & {
-		port: number;
-	}) | {
-		from: TCP;
-	}) & {
-		nodelay?: boolean;
-		onReadable?: (this: TCP, bytes: number) => void;
-		onWritable?: (this: TCP, bytes: number) => void;
-		onError?: (this: TCP) => void;
-		format?: "number" | "buffer";
-		// target?: any; // this does not appear in the implementation?
-	};
+	export type TCPOptions = ((
+		{
+			address: string;
+			port: number;
+		} | {
+			from: TCP;
+		}) & {
+			nodelay?: boolean;
+			onReadable?: (this: TCP, bytes: number) => void;
+			onWritable?: (this: TCP, bytes: number) => void;
+			onError?: (this: TCP) => void;
+			format?: "number" | "buffer";
+		}
+	);
 
 	export type TCPDevice = TCPOptions & { io: typeof UDP };
 

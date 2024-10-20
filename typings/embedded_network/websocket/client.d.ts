@@ -1,10 +1,10 @@
 declare module "embedded:network/websocket/client" {
-	import type { DNSUDPOptions } from "embedded:network/dns/resolver/udp";
+	import type { DNSUDPDevice } from "embedded:network/dns/resolver/udp";
 	import type { Buffer } from "embedded:io/_common";
 	import type TCP from "embedded:io/socket/tcp";
-	import type { TCPOptions } from "embedded:io/socket/tcp";
+	import type { TCPDevice } from "embedded:io/socket/tcp";
 	import type TLSSocket from "embedded:io/socket/tcp/tls";
-	import type { TLSOptions } from "embedded:io/socket/tcp/tls";
+	import type { TLSDevice } from "embedded:io/socket/tcp/tls";
 	import "embedded:network/websocket/client-device";
 	
 	interface WebSocketClientReadableOptions {
@@ -20,20 +20,26 @@ declare module "embedded:network/websocket/client" {
 
 	type WebSocketClientOpcode = 1 | 2 | 8 | 9 | 10;
 
-	interface WebSocketClientOptions {
-		attach?: TCP | TLSSocket;
-		socket?: TCPOptions | TLSOptions;
-		host?: string;
-		port?: number;
-		protocol?: string;
-		headers?: Map<string, string>;
-		dns?: DNSUDPOptions;
-		onReadable?: (count: number, options?: WebSocketClientReadableOptions) => void;
-		onWritable?: (count: number) => void;
-		onControl?: (opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?
-		onClose?: () => void;
-		onError?: () => void;
-	}
+	type WebSocketClientOptions = ((
+		{
+			attach?: TCP | TLSSocket;
+		} | {
+			host?: string;
+			port?: number;
+			socket: TCPDevice | TLSDevice;
+		}) & {
+			protocol?: string;
+			headers?: Map<string, string>;
+			dns?: DNSUDPDevice;
+			onReadable?: (count: number, options?: WebSocketClientReadableOptions) => void;
+			onWritable?: (count: number) => void;
+			onControl?: (opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?
+			onClose?: () => void;
+			onError?: () => void;
+		}
+	);
+
+	export type WebSocketClientDevice = WebSocketClientOptions & { io: typeof WebSocketClient };
 
 	export default class WebSocketClient {
 		constructor(options: WebSocketClientOptions);

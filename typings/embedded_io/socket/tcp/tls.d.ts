@@ -2,9 +2,22 @@ declare module "embedded:io/socket/tcp/tls" {
 	import { TCPOptions } from "embedded:io/socket/tcp";
 	import UDP from "embedded:io/socket/udp";
 
+	export type SSLSessionOptions = {
+		protocolVersion?: number;
+		serverName?: string;
+		applicationLayerProtocolNegotiation?: string;
+		trace?: number;
+		cache?: boolean;
+		tls_server_name?: string;
+		client_auth?: {
+			cipherSuites: string[];
+			subjectDN: string;
+		};
+	};
+
 	export type TLSOptions = TCPOptions & {
 		host: string;
-		secure: Record<string, any>; // should be called "tls" according to std?
+		secure: SSLSessionOptions;
 	};
 	export type TLSDevice = TCPOptions & { io: typeof UDP };
 
