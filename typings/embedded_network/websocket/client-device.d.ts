@@ -4,7 +4,7 @@ import type { TLSDevice } from "embedded:io/socket/tcp/tls";
 import type WebSocketClient from "embedded:network/websocket/client";
 
 declare global {
-	interface WSNetwork {
+	interface NetworkExtensions {
 		ws: {
 			io: typeof WebSocketClient;
 			dns: DNSUDPDevice;
@@ -17,8 +17,9 @@ declare global {
 		};
 	}
 
-	interface Device {
-		network: WSNetwork;
+    interface Device {
+		network: NetworkExtensions;
 	}
+		
 }
 

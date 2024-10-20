@@ -21,7 +21,8 @@
 export default {
 	onResponse(response) {
 		response.headers.set("content-length", this.route.msg.byteLength);
-		response.headers.set("content-type", "text/html");
+		response.headers.set("content-type", this.route.contentType ?? "text/html");
+		response.status = this.route.status ?? 200;
 		this.respond(response);
 	},
 	onWritable(count) {

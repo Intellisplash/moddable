@@ -29,13 +29,13 @@ declare module "embedded:network/websocket/client" {
 			socket: TCPDevice | TLSDevice;
 		}) & {
 			protocol?: string;
-			headers?: Map<string, string>;
+			headers?: Map<string, string | string[]>;
 			dns?: DNSUDPDevice;
-			onReadable?: (count: number, options?: WebSocketClientReadableOptions) => void;
-			onWritable?: (count: number) => void;
-			onControl?: (opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?
-			onClose?: () => void;
-			onError?: () => void;
+			onReadable?: (this: WebSocketClient, count: number, options?: WebSocketClientReadableOptions) => void;
+			onWritable?: (this: WebSocketClient, count: number) => void;
+			onControl?: (this: WebSocketClient, opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?
+			onClose?: (this: WebSocketClient, ) => void;
+			onError?: (this: WebSocketClient, ) => void;
 		}
 	);
 

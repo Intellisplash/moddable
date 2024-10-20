@@ -42,7 +42,8 @@ declare module "embedded:io/socket/tcp" {
 		constructor(options: TCPOptions);
 		readonly remoteAddress: string | undefined;
 		readonly remotePort: number | undefined;
-		read(byteLength?: number): number | ArrayBuffer;
+		read(): number;
+		read(byteLength: number): ArrayBuffer;
 		read(buffer: Buffer): void;
 		write(value: number | Buffer): void;
 		close(): void;
