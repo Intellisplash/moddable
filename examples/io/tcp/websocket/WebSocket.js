@@ -48,7 +48,7 @@ class WebSocket {
 			keepalive = options.keepalive; 
 			headers = options.headers; 
 		}
-		if (href) {
+		else if (href) {
 			let url = new URL(href);
 			let scheme = url.protocol;
 			let port, config;
