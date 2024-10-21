@@ -44,7 +44,7 @@ class WebSocketClient {
 				from: attach,
 				onReadable: count => this.#onReadable(count),
 				onWritable: count => this.#onWritable(count),
-				onError: () => this.#onError()
+				onError: () => this.#onError('ws: unknown socket error')
 			});
 			this.#state = "connected";
 			return;
@@ -71,15 +71,15 @@ class WebSocketClient {
 						port: this.#options.port,
 						onReadable: count => this.#onReadable(count),
 						onWritable: count => this.#onWritable(count),
-						onError: () => this.#onError()
+						onError: () => this.#onError('ws: unknown socket error')
 					});
 				}
 				catch {
-					this.#onError?.();
+					this.#onError?.('ws: unknown socket connect error');
 				}
 			},
 			onError: () => {
-				this.#onError?.();
+				this.#onError?.('dns: unknown resolution error');
 			},
 		});
 	}
@@ -120,17 +120,28 @@ class WebSocketClient {
 		}
 
 		data = data.slice(0);
-		const mask = Uint8Array.of(Math.random() * 256, Math.random() * 256, Math.random() * 256, Math.random() * 256);
-		Logical.xor(data, mask.buffer);
 		const format = this.#socket.format;
 		this.#socket.format = "buffer";
-		if (byteLength < 126) {
-			this.#socket.write(Uint8Array.of(type, byteLength | 0x80, mask[0], mask[1], mask[2], mask[3]));
-			this.#writable -= (6 + byteLength);
-		}
-		else {
-			this.#socket.write(Uint8Array.of(type, 126 | 0x80, byteLength >> 8, byteLength, mask[0], mask[1], mask[2], mask[3]));
-			this.#writable -= (8 + byteLength);
+		if (this.#options.attach) {
+			const mask = Uint8Array.of(Math.random() * 256, Math.random() * 256, Math.random() * 256, Math.random() * 256);
+			Logical.xor(data, mask.buffer);
+			if (byteLength < 126) {
+				this.#socket.write(Uint8Array.of(type, byteLength | 0x80, mask[0], mask[1], mask[2], mask[3]));
+				this.#writable -= (6 + byteLength);
+			}
+			else {
+				this.#socket.write(Uint8Array.of(type, 126 | 0x80, byteLength >> 8, byteLength, mask[0], mask[1], mask[2], mask[3]));
+				this.#writable -= (8 + byteLength);
+			}
+		} else {
+			if (byteLength < 126) {
+				this.#socket.write(Uint8Array.of(type, byteLength));
+				this.#writable -= (2 + byteLength);
+			}
+			else {
+				this.#socket.write(Uint8Array.of(type, 126, byteLength >> 8, byteLength));
+				this.#writable -= (4 + byteLength);
+			}
 		}
 		this.#socket.write(data);
 		this.#socket.format = format;
@@ -161,7 +172,7 @@ class WebSocketClient {
 		if (this.#options.mask) {
 			const mask = this.#options.mask;
 			Logical.xor(data, mask.buffer);
-			if (this.#data) {
+			if (this.#options.length) {
 				switch (count & 3) {
 					case 1:
 						this.#options.mask = Uint8Array.of(mask[1], mask[2], mask[3], mask[0]);
@@ -203,16 +214,16 @@ class WebSocketClient {
 					if ("receiveStatus" === this.#state) {
 						let status = this.#line.split(" ");
 						if (status.length < 3)
-							return void this.#onError();
+							return void this.#onError('ws: http upgrade error (http status len < 3)');
 						status = parseInt(status[1]);
 						if (101 !== status)
-							return void this.#onError();
+							return void this.#onError(`ws: http upgrade error (expected status 101, got ${status})`);
 						this.#state = "receiveHeader";
 					}
 					else if ("\r\n" === this.#line) {
 						// done
 						if (7 !== this.#options.flags)
-							return void this.#onError();
+							return void this.#onError(`ws: http upgrade error (insufficient header received)`);
 						this.#state = "connected";
 						delete this.#options.flags;
 						this.#socket.format = "buffer";
@@ -257,17 +268,17 @@ class WebSocketClient {
 						count--;
 
 						if (tag & 0x70)
-							return void this.#onError();
+							return void this.#onError('ws: unsupported reserved bits');
 
 						tag &= 0x0F;
-						if (1 === tag & 0x0F)
+						if (1 === tag)
 							options.binary = false;
 						else if (2 === tag)
 							options.binary = true;
 						else if (8 & tag)
 							options.control = true;
 						else if (tag)
-							return void this.#onError();
+							return void this.#onError('ws: unknown opcode (${tag})');
 						continue;
 					}
 					if (undefined === options.length) {
@@ -290,7 +301,7 @@ class WebSocketClient {
 						continue;
 					}
 					if (options.mask && options.mask.length < 4) {
-						//@@ it is an error for client to receieve a mask. this code applies to future server. client should fail here.
+						//@@ it is an error for client to receieve a mask. client should fail here.
 						options.mask.push(this.#socket.read());
 						count--;
 						if (4 !== options.mask.length)
@@ -317,6 +328,9 @@ class WebSocketClient {
 							return;
 
 						const opcode = options.tag & 0x0F;
+						if (options.mask) {
+							Logical.xor(control, options.mask.buffer);
+						}
 						try {
 							this.#options.onControl?.call(this, opcode, control.buffer);
 						}
@@ -354,7 +368,7 @@ class WebSocketClient {
 						else if (10 === opcode)	// pong
 							;
 						else
-							return void this.#onError();
+							return void this.#onError(`ws: unknown control opcode ${opcode}`);
 
 
 						delete options.tag;
@@ -464,12 +478,12 @@ class WebSocketClient {
 				break;
 		}
 	}
-	#onError() {
+	#onError(error) {
 		this.close();
 		if (this.#options.close)
 			this.#options.onClose?.call(this);
 		else
-			this.#options.onError?.call(this);
+			this.#options.onError?.call(this, error);
 	}
 	
 	static text = 1;
