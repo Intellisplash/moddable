@@ -123,6 +123,15 @@ class WebSocketClient {
 		const format = this.#socket.format;
 		this.#socket.format = "buffer";
 		if (this.#options.attach) {
+			if (byteLength < 126) {
+				this.#socket.write(Uint8Array.of(type, byteLength));
+				this.#writable -= (2 + byteLength);
+			}
+			else {
+				this.#socket.write(Uint8Array.of(type, 126, byteLength >> 8, byteLength));
+				this.#writable -= (4 + byteLength);
+			}
+		} else {
 			const mask = Uint8Array.of(Math.random() * 256, Math.random() * 256, Math.random() * 256, Math.random() * 256);
 			Logical.xor(data, mask.buffer);
 			if (byteLength < 126) {
@@ -132,15 +141,6 @@ class WebSocketClient {
 			else {
 				this.#socket.write(Uint8Array.of(type, 126 | 0x80, byteLength >> 8, byteLength, mask[0], mask[1], mask[2], mask[3]));
 				this.#writable -= (8 + byteLength);
-			}
-		} else {
-			if (byteLength < 126) {
-				this.#socket.write(Uint8Array.of(type, byteLength));
-				this.#writable -= (2 + byteLength);
-			}
-			else {
-				this.#socket.write(Uint8Array.of(type, 126, byteLength >> 8, byteLength));
-				this.#writable -= (4 + byteLength);
 			}
 		}
 		this.#socket.write(data);
