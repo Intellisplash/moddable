@@ -48,7 +48,7 @@ class WebSocket {
 			keepalive = options.keepalive; 
 			headers = options.headers; 
 		}
-		else if (href) {
+		if (href) {
 			let url = new URL(href);
 			let scheme = url.protocol;
 			let port, config;
@@ -72,7 +72,7 @@ class WebSocket {
 				this.#protocol = protocol;
 			options = { ...config, host, port, path, protocol, headers }
 		}
-		else
+		else if (!options.attach)
 			throw new URIError("no URL");
 		this.#client = new device.network.ws.io({
 			...options,
