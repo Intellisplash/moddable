@@ -33,7 +33,7 @@ declare module "embedded:network/websocket/client" {
 			dns?: DNSUDPDevice;
 			onReadable?: (this: WebSocketClient, count: number, options: WebSocketClientReadableOptions) => void;
 			onWritable?: (this: WebSocketClient, count: number) => void;
-			onControl?: (this: WebSocketClient, opcode: WebSocketClientOpcode, buffer: Uint8Array) => void; // should this be ArrayBuffer?
+			onControl?: (this: WebSocketClient, opcode: WebSocketClientOpcode, buffer: ArrayBuffer) => void;
 			onClose?: (this: WebSocketClient) => void;
 			onError?: (this: WebSocketClient, error?: string) => void;
 		}
