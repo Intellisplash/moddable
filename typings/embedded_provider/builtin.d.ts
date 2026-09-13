@@ -31,7 +31,10 @@ declare module "embedded:provider/builtin" {
   import Serial from "embedded:io/serial";
   import type { PinSpecifier } from "embedded:io/_common";
   import type Listener from "embedded:io/socket/listener";
+  import type UDP from "embedded:io/socket/udp";
+  import type Resolver from "embedded:network/dns/resolver/udp";
   import type HTTPServer from "embedded:network/http/server";
+  import type NTP from "embedded:network/ntp/client";
   import type WebSocketClient from "embedded:network/websocket/client";
 
   const device: {
@@ -64,6 +67,14 @@ declare module "embedded:provider/builtin" {
         server: {
           io: typeof HTTPServer;
           socket: { io: typeof Listener } & Record<string, any>;
+        };
+      };
+      ntp: {
+        client: {
+          io: typeof NTP;
+          dns: { io: typeof Resolver } & Record<string, any>;
+          socket: { io: typeof UDP } & Record<string, any>;
+          servers: string[];
         };
       };
       ws: {
