@@ -33,17 +33,20 @@ declare module "embedded:network/interface/wifi" {
 		channel: number;
 		RSSI: number;
 		BSSID?: string;
+		security: string;
 	}
 
 	export interface WiFiScanOptions {
-		onFound?: (result: WiFiScanResult) => void;
+		onFound: (result: WiFiScanResult) => void;
 		onComplete?: () => void;
+		channel?: number;
 	}
 
 	export interface WiFiConnectOptions {
 		SSID: string;
 		password?: string;
 		secure?: boolean;
+		channel?: number;
 	}
 
 	export interface WiFiStaticAddress {
@@ -70,7 +73,9 @@ declare module "embedded:network/interface/wifi" {
 		readonly address: string | undefined;
 		readonly MAC: string | undefined;
 		readonly SSID: string | undefined;
+		readonly BSSID: string | undefined;
 		readonly RSSI: number | undefined;
+		readonly channel: number | undefined;
 	}
 	interface WiFi extends Disposable {}
 
